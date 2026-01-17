@@ -1,0 +1,24 @@
+{
+  "name": "git-helper",
+  "version": "1.0.0",
+  "description": "Git workflow assistant that helps with commits, branches, and repository management. Use when working with git operations, creating commits, or managing branches.",
+  "type": "command",
+  "category": "development",
+  "author": {
+    "name": "Claude Plugins",
+    "github": "claude-plugins"
+  },
+  "license": "MIT",
+  "keywords": [
+    "git",
+    "version-control",
+    "commits",
+    "branches"
+  ],
+  "main": "index.md",
+  "requirements": {
+    "tools": [
+      "git"
+    ]
+  }
+}

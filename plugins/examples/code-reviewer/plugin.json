@@ -1,0 +1,22 @@
+{
+  "name": "code-reviewer",
+  "version": "1.0.0",
+  "description": "AI-powered code review assistant that analyzes code for bugs, security issues, and best practices. Use when reviewing pull requests, refactoring code, or improving code quality.",
+  "type": "skill",
+  "category": "development",
+  "author": {
+    "name": "Claude Plugins",
+    "github": "claude-plugins"
+  },
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "quality",
+    "security",
+    "best-practices"
+  ],
+  "main": "SKILL.md",
+  "requirements": {
+    "claude": ">=2.0.0"
+  }
+}

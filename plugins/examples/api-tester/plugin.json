@@ -1,0 +1,25 @@
+{
+  "name": "api-tester",
+  "version": "1.0.0",
+  "description": "HTTP API testing and documentation tool. Use when testing REST APIs, debugging endpoints, or documenting API behavior.",
+  "type": "skill",
+  "category": "testing",
+  "author": {
+    "name": "Claude Plugins",
+    "github": "claude-plugins"
+  },
+  "license": "MIT",
+  "keywords": [
+    "api",
+    "http",
+    "rest",
+    "testing",
+    "curl"
+  ],
+  "main": "SKILL.md",
+  "requirements": {
+    "tools": [
+      "curl"
+    ]
+  }
+}
