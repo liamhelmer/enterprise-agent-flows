@@ -284,7 +284,7 @@ impl MergeQueue {
             }
         };
 
-        let Some(mut entry) = entry else {
+        let Some(entry) = entry else {
             return Ok(());
         };
 

@@ -1,6 +1,6 @@
 //! IPC server using Unix domain sockets
 
-use crate::error::{DaemonError, DaemonResult};
+use crate::error::DaemonResult;
 use crate::queue::MergeQueue;
 use crate::state::StateManager;
 use serde::{Deserialize, Serialize};

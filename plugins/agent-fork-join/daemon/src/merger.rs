@@ -86,7 +86,7 @@ impl Merger {
         repo.merge(&[&annotated], Some(&mut opts), None)?;
 
         // Check for conflicts
-        let index = repo.index()?;
+        let mut index = repo.index()?;
         if index.has_conflicts() {
             let conflicts = self.get_conflict_files(&index)?;
 
@@ -126,7 +126,7 @@ impl Merger {
         repo: &Repository,
         target: &Commit,
         agent: &Commit,
-        entry: &QueueEntry,
+        _entry: &QueueEntry,
     ) -> Result<MergeResult, git2::Error> {
         // For rebase, we replay agent commits on top of target
         // This is a simplified version - full rebase would handle multiple commits
