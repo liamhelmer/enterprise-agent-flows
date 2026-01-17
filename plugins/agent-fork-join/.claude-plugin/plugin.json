@@ -1,0 +1,45 @@
+{
+  "name": "agent-fork-join",
+  "version": "0.1.0",
+  "description": "Multi-agent git workflow orchestrator with isolated worktrees, FIFO merge queue, and automated PR lifecycle management.",
+  "author": {
+    "name": "liamhelmer",
+    "email": "liamhelmer@example.com"
+  },
+  "repository": "https://github.com/liamhelmer/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "git",
+    "multi-agent",
+    "worktree",
+    "merge-queue",
+    "fork-join",
+    "parallel",
+    "orchestration",
+    "pr-automation"
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/on-prompt-submit.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/on-session-complete.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

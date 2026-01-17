@@ -2,6 +2,40 @@
 
 End-to-end test suite for the `agent-fork-join` plugin.
 
+## CRITICAL Test Requirements
+
+The following requirements are **MANDATORY** for the E2E test to be valid:
+
+1. **NO `--dangerously-skip-permissions`**: The test must NOT use the `--dangerously-skip-permissions` flag.
+   Instead, it uses `--allowedTools` with specific scoped permissions for security.
+
+2. **Prompt must NOT specify git operations**: The test prompt must NOT mention:
+   - Creating branches (feature branch, agent branches)
+   - Making commits
+   - Creating pull requests
+   - Pushing to remote
+
+3. **Plugin must handle ALL git operations**: For the test to pass, the plugin's hooks MUST automatically:
+   - Create the feature branch via `UserPromptSubmit` hook
+   - Create commits via `AgentComplete` hook
+   - Create the pull request when all work is complete
+
+4. **Plugin installation via `claude plugin` command**: The test must NOT manually copy plugin files.
+   Instead, it MUST use the Claude CLI plugin commands to simulate marketplace installation:
+
+   ```bash
+   # Add the plugins directory as a local marketplace
+   claude plugin marketplace add /path/to/plugins
+
+   # Install the plugin from that marketplace
+   claude plugin install agent-fork-join --scope project
+   ```
+
+   This ensures the plugin is installed the same way users would install from the marketplace.
+
+If any git operation needs to be specified in the test prompt, that indicates the plugin is NOT
+working correctly and the test should fail.
+
 ## Overview
 
 This test suite validates the complete workflow of the agent-fork-join plugin by:
@@ -70,7 +104,8 @@ Usage: ./e2e-test.sh [OPTIONS]
 Options:
   --clean           Clean up the test repository after test completes
   --org ORG         GitHub organization/user (default: liamhelmer)
-  --timeout SECS    Timeout in seconds (default: 600)
+  --timeout SECS    Timeout in seconds (default: 300, test fails if exceeded)
+  --model MODEL     Claude model to use (default: haiku)
   --repo NAME       Use specific repo name instead of generated one
   --verbose, -v     Verbose output
   --help, -h        Show help message

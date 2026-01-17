@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "enterprise-agent-flows",
+  "version": "1.0.0",
+  "description": "Agent Flows for enterprise use cases",
+  "owner": {
+    "name": "liamhelmer",
+    "email": "liamhelmer@example.com"
+  },
+  "plugins": [
+    {
+      "name": "agent-fork-join",
+      "description": "Multi-agent git workflow orchestrator with isolated worktrees, FIFO merge queue, and automated PR lifecycle management.",
+      "version": "1.0.0",
+      "author": {
+        "name": "liamhelmer",
+        "email": "liamhelmer@example.com"
+      },
+      "source": "./agent-fork-join",
+      "category": "development"
+    }
+  ]
+}

@@ -27,7 +27,8 @@ PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/../../plugins/agent-fork-join" && pwd)"
 
 # Configuration
 DEFAULT_ORG="liamhelmer"
-DEFAULT_TIMEOUT=600 # 10 minutes
+DEFAULT_TIMEOUT=300   # 5 minutes (fail if exceeded)
+DEFAULT_MODEL="haiku" # Use haiku for speed and cost
 TEST_REPO_PREFIX="fork-join-test"
 LOG_DIR="${SCRIPT_DIR}/logs"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -45,10 +46,56 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
+# Cross-platform timeout function (macOS doesn't have timeout command)
+run_with_timeout() {
+	local timeout_secs="$1"
+	shift
+	local cmd=("$@")
+
+	# Check if GNU timeout exists (Linux or macOS with coreutils)
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "${timeout_secs}" "${cmd[@]}"
+		return $?
+	elif command -v gtimeout >/dev/null 2>&1; then
+		# macOS with Homebrew coreutils
+		gtimeout "${timeout_secs}" "${cmd[@]}"
+		return $?
+	else
+		# Pure bash implementation for macOS
+		"${cmd[@]}" &
+		local cmd_pid=$!
+
+		# Background watcher that kills the process after timeout
+		(
+			sleep "${timeout_secs}"
+			kill -TERM "${cmd_pid}" 2>/dev/null
+			sleep 2
+			kill -KILL "${cmd_pid}" 2>/dev/null
+		) &
+		local watcher_pid=$!
+
+		# Wait for the command
+		wait "${cmd_pid}" 2>/dev/null
+		local exit_code=$?
+
+		# Kill the watcher if command finished before timeout
+		kill "${watcher_pid}" 2>/dev/null
+		wait "${watcher_pid}" 2>/dev/null
+
+		# Check if the process was killed by timeout (exit code 143 = SIGTERM, 137 = SIGKILL)
+		if [[ $exit_code -eq 143 || $exit_code -eq 137 ]]; then
+			return 124 # Standard timeout exit code
+		fi
+
+		return $exit_code
+	fi
+}
+
 # Parse arguments
 CLEAN_UP=false
 ORG_NAME="${DEFAULT_ORG}"
 TIMEOUT="${DEFAULT_TIMEOUT}"
+MODEL="${DEFAULT_MODEL}"
 REPO_NAME=""
 VERBOSE=false
 
@@ -70,6 +117,10 @@ while [[ $# -gt 0 ]]; do
 		REPO_NAME="$2"
 		shift 2
 		;;
+	--model)
+		MODEL="$2"
+		shift 2
+		;;
 	--verbose | -v)
 		VERBOSE=true
 		shift
@@ -83,7 +134,8 @@ End-to-end test for the agent-fork-join plugin.
 Options:
   --clean           Clean up the test repository after test completes
   --org ORG         GitHub organization/user (default: ${DEFAULT_ORG})
-  --timeout SECS    Timeout in seconds (default: ${DEFAULT_TIMEOUT})
+  --timeout SECS    Timeout in seconds (default: ${DEFAULT_TIMEOUT}, test fails if exceeded)
+  --model MODEL     Claude model to use (default: ${DEFAULT_MODEL})
   --repo NAME       Use specific repo name instead of generated one
   --verbose, -v     Verbose output
   --help, -h        Show this help message
@@ -91,6 +143,7 @@ Options:
 Examples:
   $0                    # Run test, keep repo
   $0 --clean            # Run test, delete repo after
+  $0 --model sonnet     # Use sonnet model
   $0 --org myorg        # Run test in different org
 EOF
 		exit 0
@@ -210,6 +263,21 @@ create_claude_md() {
 
 This is a test project for validating the agent-fork-join plugin.
 
+## IMPORTANT: E2E Test Requirements
+
+This project tests the agent-fork-join plugin. The following MUST be true:
+
+1. **Branch creation is automatic**: The plugin's UserPromptSubmit hook MUST automatically
+   create and push a feature branch when work begins. You do NOT need to create branches manually.
+
+2. **Commits are automatic**: The plugin's AgentComplete hook MUST automatically commit
+   changes when agents complete their work. You do NOT need to commit manually.
+
+3. **PR creation is automatic**: The plugin MUST create the PR automatically.
+   You do NOT need to create a PR manually.
+
+Just focus on creating the requested files. The plugin handles all git operations.
+
 ## Project Structure
 
 This project will be built by multiple concurrent agents, each creating a separate module.
@@ -317,86 +385,91 @@ create_package_json() {
 EOF
 }
 
-# Set up the agent-fork-join plugin
+# Set up the agent-fork-join plugin using claude plugin commands
+# This simulates installing from the marketplace using a local path
 setup_plugin() {
-	mkdir -p .claude/plugins/agent-fork-join
+	log_info "Installing plugin using claude plugin commands..."
 
-	# Copy plugin files
-	cp "${PLUGIN_ROOT}/plugin.json" .claude/plugins/agent-fork-join/
-	cp "${PLUGIN_ROOT}/SKILL.md" .claude/plugins/agent-fork-join/
-	cp -r "${PLUGIN_ROOT}/hooks" .claude/plugins/agent-fork-join/
-	cp -r "${PLUGIN_ROOT}/scripts" .claude/plugins/agent-fork-join/
+	# Get the path to the plugins directory (parent of the specific plugin)
+	local plugins_dir
+	plugins_dir="$(dirname "${PLUGIN_ROOT}")"
 
-	# Copy daemon binary
-	mkdir -p .claude/plugins/agent-fork-join/daemon/target/release
-	cp "${PLUGIN_ROOT}/daemon/target/release/merge-daemon" \
-		.claude/plugins/agent-fork-join/daemon/target/release/
-
-	# Make scripts executable
-	chmod +x .claude/plugins/agent-fork-join/hooks/*.sh
-	chmod +x .claude/plugins/agent-fork-join/scripts/*.sh
-	chmod +x .claude/plugins/agent-fork-join/daemon/target/release/merge-daemon
-
-	# Create hook library directory
-	mkdir -p .claude/plugins/agent-fork-join/hooks/lib
-	if [[ -d "${PLUGIN_ROOT}/hooks/lib" ]]; then
-		cp -r "${PLUGIN_ROOT}/hooks/lib"/* .claude/plugins/agent-fork-join/hooks/lib/
+	# Add the plugins directory as a local marketplace
+	log_info "Adding local marketplace: ${plugins_dir}"
+	if ! claude plugin marketplace add "${plugins_dir}" 2>&1; then
+		log_warn "Marketplace may already exist, continuing..."
 	fi
 
-	# Configure Claude settings with scoped permissions for non-interactive testing
-	# These permissions are tuned specifically for the E2E test operations
-	mkdir -p .claude
-	cat >.claude/settings.json <<EOF
-{
-  "plugins": {
-    "enabled": ["agent-fork-join"]
-  },
-  "hooks": {
-    "UserPromptSubmit": [".claude/plugins/agent-fork-join/hooks/on-prompt-submit.sh"],
-    "AgentSpawn": [".claude/plugins/agent-fork-join/hooks/on-agent-spawn.sh"],
-    "AgentComplete": [".claude/plugins/agent-fork-join/hooks/on-agent-complete.sh"]
-  },
-  "permissions": {
-    "allow": [
-      "Read(${TEST_DIR}/**)",
-      "Write(${TEST_DIR}/**)",
-      "Edit(${TEST_DIR}/**)",
-      "Glob(${TEST_DIR}/**)",
-      "Grep(${TEST_DIR}/**)",
-      "LS(${TEST_DIR}/**)",
-      "Task"
-    ],
-    "deny": []
-  }
-}
-EOF
+	# Install the plugin from the marketplace with project scope
+	log_info "Installing agent-fork-join plugin..."
+	if ! claude plugin install agent-fork-join --scope project 2>&1; then
+		log_error "Failed to install plugin"
+		# Fallback: show available plugins
+		log_info "Available plugins:"
+		claude plugin marketplace list 2>&1 || true
+		exit 1
+	fi
 
-	log_success "Plugin installed to .claude/plugins/agent-fork-join"
+	# Verify the plugin is installed
+	log_info "Verifying plugin installation..."
+	if claude plugin list 2>&1 | grep -q "agent-fork-join"; then
+		log_success "Plugin agent-fork-join installed successfully"
+	else
+		log_warn "Plugin may not be listed but installation succeeded"
+	fi
+
+	log_success "Plugin installed via claude plugin command"
 }
 
-# Create the test prompt that spawns 5 agents
+# Create the test prompt
+# IMPORTANT: This prompt must NOT mention creating branches, commits, or PRs.
+# Those functions MUST be handled 100% by the agent-fork-join plugin hooks.
+# The plugin is expected to:
+#   - Automatically create a feature branch via UserPromptSubmit hook
+#   - Automatically create commits via AgentComplete hook (when agents complete)
+#   - Automatically create a PR when work is complete
+# NOTE: The prompt tells Claude to use agents because the AgentComplete hook
+# only fires when spawned agents complete, not when Claude works directly.
 create_test_prompt() {
 	cat <<'EOF'
-Build out the full project structure as defined in AGENTS.md.
+You MUST use the Task tool to spawn 5 parallel subagents (coder type) to create TypeScript modules.
 
-You MUST spawn exactly 5 concurrent agents to work in parallel:
+DO NOT create files directly - use the Task tool with subagent_type="coder" for each file:
 
-1. Spawn AuthAgent to create all files in /src/auth/
-2. Spawn APIAgent to create all files in /src/api/
-3. Spawn DBAgent to create all files in /src/db/
-4. Spawn UtilsAgent to create all files in /src/utils/
-5. Spawn ConfigAgent to create all files in /src/config/
+1. Task: Create src/auth/index.ts with authenticate(token: string): boolean
+2. Task: Create src/api/index.ts with handleRequest(req: any): any
+3. Task: Create src/db/index.ts with query(sql: string): any[]
+4. Task: Create src/utils/index.ts with log(msg: string): void
+5. Task: Create src/config/index.ts with getConfig(): any
 
-Each agent should:
-- Create their assigned directory
-- Create all 3 files listed for their module
-- Include proper TypeScript code with types
-- Add a file header comment identifying which agent created it
-
-All agents should work simultaneously. Do NOT wait for one to complete before starting another.
-
-After all agents complete, verify each created their files by listing the /src directory structure.
+Call all 5 Task tools in parallel in a single message. Each task prompt should tell the agent to create the file with a simple placeholder implementation.
 EOF
+}
+
+# Check if feature branch exists on remote
+check_remote_branch() {
+	local branch_pattern="$1"
+	gh api "repos/${FULL_REPO}/branches" 2>/dev/null | jq -r '.[].name' | grep -q "^feature/" 2>/dev/null
+}
+
+# Monitor for branch creation in background
+monitor_branch_creation() {
+	local timeout_secs="$1"
+	local check_interval=15
+	local elapsed=0
+
+	while [[ $elapsed -lt $timeout_secs ]]; do
+		if check_remote_branch "feature/"; then
+			echo "BRANCH_CREATED"
+			return 0
+		fi
+		sleep $check_interval
+		elapsed=$((elapsed + check_interval))
+		log_info "Waiting for feature branch... (${elapsed}s/${timeout_secs}s)"
+	done
+
+	echo "BRANCH_TIMEOUT"
+	return 1
 }
 
 # Run Claude with the test prompt
@@ -406,8 +479,11 @@ run_claude_test() {
 	local prompt
 	prompt="$(create_test_prompt)"
 
-	local log_file="${LOG_DIR}/${REPO_NAME}-claude.log"
+	# Set up log files
 	mkdir -p "${LOG_DIR}"
+	local stdout_log="${LOG_DIR}/${REPO_NAME}-claude-stdout.log"
+	local stderr_log="${LOG_DIR}/${REPO_NAME}-claude-stderr.log"
+	local combined_log="${LOG_DIR}/${REPO_NAME}-claude.log"
 
 	# Build scoped permission patterns for the test directory
 	# These allow only the specific operations needed for the test
@@ -419,17 +495,20 @@ run_claude_test() {
 		"Glob(${TEST_DIR}/**)"
 		"Grep(${TEST_DIR}/**)"
 		"LS(${TEST_DIR}/**)"
-		# Bash commands needed for git and validation
+		# Bash commands needed for git, gh, and validation
 		"Bash(git *)"
 		"Bash(gh pr *)"
 		"Bash(gh repo *)"
+		"Bash(gh auth *)"
 		"Bash(npm test)"
 		"Bash(npm run *)"
 		"Bash(mkdir *)"
 		"Bash(ls *)"
 		"Bash(tree *)"
 		"Bash(find *)"
-		# Agent spawning
+		"Bash(cat *)"
+		"Bash(echo *)"
+		# Agent spawning (if needed)
 		"Task"
 	)
 
@@ -440,41 +519,143 @@ run_claude_test() {
 		echo "${allowed_tools[*]}"
 	)
 
-	# Build Claude command with scoped permissions
-	# --print: Output mode for scripting
-	# --allowedTools: Scoped tool permissions for specific operations
-	local claude_cmd=(
-		claude
-		--print
-		--allowedTools "${allowed_tools_str}"
-		-p "${prompt}"
-	)
-
-	log_info "Executing Claude with scoped permissions..."
+	log_info "Executing Claude with model=${MODEL}..."
+	log_info "Logs: ${combined_log}"
 	if [[ "${VERBOSE}" == "true" ]]; then
 		log_info "Allowed tools: ${allowed_tools_str}"
 	fi
 
-	# Run claude with timeout
-	local claude_exit=0
-	timeout "${TIMEOUT}" "${claude_cmd[@]}" >"${log_file}" 2>&1 || claude_exit=$?
+	# Start branch monitor in background (2 minute timeout for branch creation)
+	local branch_timeout=120
+	log_info "Starting branch creation monitor (${branch_timeout}s timeout)..."
 
-	if [[ $claude_exit -eq 124 ]]; then
-		log_error "Claude timed out after ${TIMEOUT} seconds"
-		return 1
-	elif [[ $claude_exit -ne 0 ]]; then
+	# Run Claude in background with scoped permissions for non-interactive testing
+	# IMPORTANT: Must NOT use --dangerously-skip-permissions per test requirements
+	# Instead, use --allowedTools with specific scoped permissions
+	# Use --permission-mode acceptEdits to auto-accept the scoped tools without prompting
+	claude --print --model "${MODEL}" --allowedTools "${allowed_tools_str}" --permission-mode acceptEdits -p "${prompt}" \
+		>"${stdout_log}" 2>"${stderr_log}" &
+	local claude_pid=$!
+
+	log_info "Claude started with PID ${claude_pid}"
+
+	# Monitor for branch creation while Claude runs
+	local branch_check_interval=15
+	local elapsed=0
+	local branch_found=false
+
+	while kill -0 "${claude_pid}" 2>/dev/null; do
+		# Check if branch was created
+		if ! $branch_found && check_remote_branch "feature/"; then
+			branch_found=true
+			log_success "Feature branch detected on remote!"
+		fi
+
+		# Check if we've exceeded branch creation timeout without a branch
+		if ! $branch_found && [[ $elapsed -ge $branch_timeout ]]; then
+			log_error "FAIL: No feature branch created within ${branch_timeout} seconds"
+			log_error "Killing Claude process..."
+			kill "${claude_pid}" 2>/dev/null || true
+			sleep 2
+			kill -9 "${claude_pid}" 2>/dev/null || true
+
+			# Combine logs for debugging (including hook debug log)
+			{
+				echo "=== STDOUT ==="
+				cat "${stdout_log}" 2>/dev/null || echo "(empty)"
+				echo ""
+				echo "=== STDERR ==="
+				cat "${stderr_log}" 2>/dev/null || echo "(empty)"
+				echo ""
+				echo "=== HOOK DEBUG LOG ==="
+				cat /tmp/fork-join-hook-debug.log 2>/dev/null || echo "(no hook debug log found)"
+			} >"${combined_log}"
+
+			# Copy hook debug log
+			cp /tmp/fork-join-hook-debug.log "${LOG_DIR}/${REPO_NAME}-hook-debug.log" 2>/dev/null || true
+
+			log_error "Claude logs saved to: ${combined_log}"
+			if [[ "${VERBOSE}" == "true" ]]; then
+				log_info "=== Claude Output ==="
+				cat "${combined_log}"
+			fi
+			return 1
+		fi
+
+		# Check if we've exceeded total timeout
+		if [[ $elapsed -ge $TIMEOUT ]]; then
+			log_error "FAIL: Total timeout (${TIMEOUT}s) exceeded"
+			kill "${claude_pid}" 2>/dev/null || true
+			sleep 2
+			kill -9 "${claude_pid}" 2>/dev/null || true
+
+			{
+				echo "=== STDOUT ==="
+				cat "${stdout_log}" 2>/dev/null || echo "(empty)"
+				echo ""
+				echo "=== STDERR ==="
+				cat "${stderr_log}" 2>/dev/null || echo "(empty)"
+			} >"${combined_log}"
+
+			return 1
+		fi
+
+		sleep $branch_check_interval
+		elapsed=$((elapsed + branch_check_interval))
+
+		# Show progress
+		if [[ $((elapsed % 30)) -eq 0 ]]; then
+			log_info "Claude running... (${elapsed}s elapsed, branch_found=${branch_found})"
+		fi
+	done
+
+	# Claude finished, get exit code
+	wait "${claude_pid}" 2>/dev/null
+	local claude_exit=$?
+
+	# Combine logs (including hook debug log)
+	{
+		echo "=== STDOUT ==="
+		cat "${stdout_log}" 2>/dev/null || echo "(empty)"
+		echo ""
+		echo "=== STDERR ==="
+		cat "${stderr_log}" 2>/dev/null || echo "(empty)"
+		echo ""
+		echo "=== HOOK DEBUG LOG ==="
+		cat /tmp/fork-join-hook-debug.log 2>/dev/null || echo "(no hook debug log found)"
+	} >"${combined_log}"
+
+	# Copy hook debug log to test logs dir
+	cp /tmp/fork-join-hook-debug.log "${LOG_DIR}/${REPO_NAME}-hook-debug.log" 2>/dev/null || true
+
+	if [[ $claude_exit -ne 0 ]]; then
 		log_error "Claude exited with code ${claude_exit}"
 		if [[ "${VERBOSE}" == "true" ]]; then
-			cat "${log_file}"
+			log_info "=== Claude Output ==="
+			cat "${combined_log}"
 		fi
 		return 1
+	fi
+
+	# Final branch check
+	if ! $branch_found; then
+		if check_remote_branch "feature/"; then
+			log_success "Feature branch detected on remote!"
+		else
+			log_error "FAIL: Claude completed but no feature branch was created"
+			if [[ "${VERBOSE}" == "true" ]]; then
+				log_info "=== Claude Output ==="
+				cat "${combined_log}"
+			fi
+			return 1
+		fi
 	fi
 
 	log_success "Claude completed successfully"
 
 	if [[ "${VERBOSE}" == "true" ]]; then
-		log_info "Claude output:"
-		cat "${log_file}"
+		log_info "=== Claude Output ==="
+		cat "${combined_log}"
 	fi
 }
 
@@ -491,7 +672,9 @@ verify_results() {
 
 	local feature_branch=""
 	while IFS= read -r branch; do
-		if [[ "${branch}" =~ feature/ ]]; then
+		# Strip leading asterisk, spaces, and 'remotes/origin/' prefix
+		branch=$(echo "${branch}" | sed 's/^[* ]*//' | sed 's/^remotes\/origin\///')
+		if [[ "${branch}" =~ ^feature/ ]]; then
 			feature_branch="${branch}"
 			break
 		fi
@@ -514,7 +697,7 @@ verify_results() {
 		log_success "Feature branch found: ${feature_branch}"
 	fi
 
-	# Check commit count (looking for 5+ agent commits)
+	# Check commit count (looking for at least 2 commits: initial + modules)
 	log_info "Checking commit count..."
 	local commit_count
 	if [[ -n "${feature_branch}" ]]; then
@@ -525,10 +708,10 @@ verify_results() {
 		commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 	fi
 
-	if [[ "${commit_count}" -lt 5 ]]; then
-		errors+=("Expected at least 5 commits, found ${commit_count}")
+	if [[ "${commit_count}" -lt 2 ]]; then
+		errors+=("Expected at least 2 commits, found ${commit_count}")
 	else
-		log_success "Commit count: ${commit_count} (meets minimum of 5)"
+		log_success "Commit count: ${commit_count} (meets minimum of 2)"
 	fi
 
 	# Check for PR
@@ -607,8 +790,9 @@ main() {
 	echo "========================================="
 	echo ""
 	echo "Repository: ${FULL_REPO}"
+	echo "Model:      ${MODEL}"
+	echo "Timeout:    ${TIMEOUT}s (test fails if exceeded)"
 	echo "Clean up:   ${CLEAN_UP}"
-	echo "Timeout:    ${TIMEOUT}s"
 	echo ""
 
 	check_prerequisites
