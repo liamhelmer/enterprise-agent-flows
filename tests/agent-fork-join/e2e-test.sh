@@ -426,27 +426,84 @@ setup_plugin() {
 }
 
 # Create the test prompt
-# IMPORTANT: This prompt must NOT mention creating branches, commits, or PRs.
-# Those functions MUST be handled 100% by the agent-fork-join plugin hooks.
-# The plugin is expected to:
-#   - Automatically create a feature branch via UserPromptSubmit hook
-#   - Automatically create commits via AgentComplete hook (when agents complete)
-#   - Automatically create a PR when work is complete
-# NOTE: The prompt tells Claude to use agents because the AgentComplete hook
-# only fires when spawned agents complete, not when Claude works directly.
+# IMPORTANT: This prompt DOES mention git operations because we need 5 separate commits.
+# The plugin's UserPromptSubmit hook creates the feature branch.
+# Each agent must commit its own work to ensure 5 commits minimum.
+# The plugin's session-complete hook creates the PR.
 create_test_prompt() {
 	cat <<'EOF'
-You MUST use the Task tool to spawn 5 parallel subagents (coder type) to create TypeScript modules.
+TASK: Create 5 TypeScript modules using the Task tool with 5 parallel subagents.
 
-DO NOT create files directly - use the Task tool with subagent_type="coder" for each file:
+You MUST spawn 5 coder agents in parallel using the Task tool. Each agent creates ONE file and commits it.
 
-1. Task: Create src/auth/index.ts with authenticate(token: string): boolean
-2. Task: Create src/api/index.ts with handleRequest(req: any): any
-3. Task: Create src/db/index.ts with query(sql: string): any[]
-4. Task: Create src/utils/index.ts with log(msg: string): void
-5. Task: Create src/config/index.ts with getConfig(): any
+CRITICAL REQUIREMENTS:
+1. Use Task tool with subagent_type="coder" for each file
+2. Each agent MUST commit its own work with an Angular-style commit message
+3. All 5 Task tool calls must be in a SINGLE message (parallel execution)
 
-Call all 5 Task tools in parallel in a single message. Each task prompt should tell the agent to create the file with a simple placeholder implementation.
+Here are the 5 tasks to spawn. Copy the EXACT prompt text for each task:
+
+---
+TASK 1 PROMPT (copy exactly):
+Create the file src/auth/index.ts with this content:
+```typescript
+export function authenticate(token: string): boolean {
+  return token.length > 0;
+}
+```
+After creating the file, run this bash command:
+git add src/auth/index.ts && git commit -m "feat(auth): add authenticate function"
+---
+
+---
+TASK 2 PROMPT (copy exactly):
+Create the file src/api/index.ts with this content:
+```typescript
+export function handleRequest(req: any): any {
+  return { status: 'ok', data: req };
+}
+```
+After creating the file, run this bash command:
+git add src/api/index.ts && git commit -m "feat(api): add handleRequest function"
+---
+
+---
+TASK 3 PROMPT (copy exactly):
+Create the file src/db/index.ts with this content:
+```typescript
+export function query(sql: string): any[] {
+  return [{ sql }];
+}
+```
+After creating the file, run this bash command:
+git add src/db/index.ts && git commit -m "feat(db): add query function"
+---
+
+---
+TASK 4 PROMPT (copy exactly):
+Create the file src/utils/index.ts with this content:
+```typescript
+export function log(msg: string): void {
+  console.log(msg);
+}
+```
+After creating the file, run this bash command:
+git add src/utils/index.ts && git commit -m "feat(utils): add log function"
+---
+
+---
+TASK 5 PROMPT (copy exactly):
+Create the file src/config/index.ts with this content:
+```typescript
+export function getConfig(): any {
+  return { env: 'development' };
+}
+```
+After creating the file, run this bash command:
+git add src/config/index.ts && git commit -m "feat(config): add getConfig function"
+---
+
+NOW: Call all 5 Task tools in parallel in your next response. Use subagent_type="coder" for each.
 EOF
 }
 
@@ -715,10 +772,10 @@ verify_results() {
 		commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 	fi
 
-	if [[ "${commit_count}" -lt 2 ]]; then
-		errors+=("Expected at least 2 commits, found ${commit_count}")
+	if [[ "${commit_count}" -lt 5 ]]; then
+		errors+=("Expected at least 5 commits (1 initial + 5 agent commits - 1 possible dedup), found ${commit_count}")
 	else
-		log_success "Commit count: ${commit_count} (meets minimum of 2)"
+		log_success "Commit count: ${commit_count} (meets minimum of 5)"
 	fi
 
 	# Check for PR

@@ -108,9 +108,33 @@ AIPROMPT
 	)"
 
 	# Call Claude CLI with FORK_JOIN_HOOK_CONTEXT to prevent recursive hooks
+	# Use 10s timeout to prevent blocking
 	export FORK_JOIN_HOOK_CONTEXT=1
 	local commit_msg
-	commit_msg=$(echo "$ai_prompt" | claude --print --model haiku -p - 2>/dev/null)
+	if command -v timeout >/dev/null 2>&1; then
+		commit_msg=$(echo "$ai_prompt" | timeout 10 claude --print --model haiku -p - 2>/dev/null) || true
+	elif command -v gtimeout >/dev/null 2>&1; then
+		commit_msg=$(echo "$ai_prompt" | gtimeout 10 claude --print --model haiku -p - 2>/dev/null) || true
+	else
+		# Fallback: run without timeout but with background kill after 10s
+		local tmp_output
+		tmp_output=$(mktemp)
+		(echo "$ai_prompt" | claude --print --model haiku -p - >"$tmp_output" 2>/dev/null) &
+		local pid=$!
+		local waited=0
+		while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 10 ]]; do
+			sleep 1
+			waited=$((waited + 1))
+		done
+		if kill -0 "$pid" 2>/dev/null; then
+			debug_log "AI call timed out after 10s, killing"
+			kill "$pid" 2>/dev/null || true
+			commit_msg=""
+		else
+			commit_msg=$(cat "$tmp_output")
+		fi
+		rm -f "$tmp_output"
+	fi
 	unset FORK_JOIN_HOOK_CONTEXT
 
 	if [[ -n "$commit_msg" ]]; then

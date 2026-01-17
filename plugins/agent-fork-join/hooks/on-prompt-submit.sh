@@ -176,12 +176,36 @@ ${prompt_text}
 
 OUTPUT ONLY THE BRANCH NAME, nothing else. Example: feat/add-user-auth"
 
-	# Call Claude CLI with minimal settings
+	# Call Claude CLI with minimal settings and 10s timeout
 	# Use --print to get output, -p for prompt, --model haiku for speed
 	# Set FORK_JOIN_HOOK_CONTEXT to prevent recursive hook calls
 	export FORK_JOIN_HOOK_CONTEXT=1
 	local raw_response
-	raw_response=$(echo "$ai_prompt" | claude --print --model haiku -p - 2>/dev/null)
+	# Use timeout to prevent blocking (10 seconds max)
+	if command -v timeout >/dev/null 2>&1; then
+		raw_response=$(echo "$ai_prompt" | timeout 10 claude --print --model haiku -p - 2>/dev/null) || true
+	elif command -v gtimeout >/dev/null 2>&1; then
+		raw_response=$(echo "$ai_prompt" | gtimeout 10 claude --print --model haiku -p - 2>/dev/null) || true
+	else
+		# Fallback: run without timeout but with background kill after 10s
+		local tmp_output
+		tmp_output=$(mktemp)
+		(echo "$ai_prompt" | claude --print --model haiku -p - >"$tmp_output" 2>/dev/null) &
+		local pid=$!
+		local waited=0
+		while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 10 ]]; do
+			sleep 1
+			waited=$((waited + 1))
+		done
+		if kill -0 "$pid" 2>/dev/null; then
+			debug_log "AI call timed out after 10s, killing"
+			kill "$pid" 2>/dev/null || true
+			raw_response=""
+		else
+			raw_response=$(cat "$tmp_output")
+		fi
+		rm -f "$tmp_output"
+	fi
 	unset FORK_JOIN_HOOK_CONTEXT
 	debug_log "AI raw response: '${raw_response:0:100}...'"
 
