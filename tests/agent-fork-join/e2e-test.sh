@@ -394,10 +394,14 @@ setup_plugin() {
 	local plugins_dir
 	plugins_dir="$(dirname "${PLUGIN_ROOT}")"
 
+	# Remove existing marketplace to ensure fresh plugin files (avoid caching issues)
+	log_info "Removing existing marketplace if present..."
+	claude plugin marketplace remove enterprise-agent-flows 2>&1 || true
+
 	# Add the plugins directory as a local marketplace
 	log_info "Adding local marketplace: ${plugins_dir}"
 	if ! claude plugin marketplace add "${plugins_dir}" 2>&1; then
-		log_warn "Marketplace may already exist, continuing..."
+		log_warn "Failed to add marketplace, trying to continue..."
 	fi
 
 	# Install the plugin from the marketplace with project scope
