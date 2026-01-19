@@ -50,6 +50,28 @@ The plugin will NOT activate for:
 | `refactor` | A code change that neither fixes a bug nor adds a feature     |
 | `test`     | Adding missing tests or correcting existing tests             |
 
+## Commands
+
+### /done - Complete PR Workflow
+
+Use `/done` when you're finished with your work and want to:
+
+1. **Merge the PR** (if it exists and is open)
+2. **Switch to main branch**
+3. **Pull latest changes**
+4. **Resolve conflicts** (automatically if possible)
+5. **Run /compact** to consolidate conversation history
+
+```
+/done
+```
+
+This is the recommended way to complete a PR workflow after your changes are ready.
+
+## PR Prompt History
+
+Each PR description includes a "Prompt History" section with timestamped collapsible accordions for each prompt submitted during the session. When continuing work on an existing PR branch, new prompts are automatically appended to this history.
+
 ## Multi-Agent Workflow (Future)
 
 The daemon infrastructure supports:
