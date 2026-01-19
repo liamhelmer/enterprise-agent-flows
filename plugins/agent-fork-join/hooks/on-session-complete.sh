@@ -49,6 +49,115 @@ fi
 # Valid Angular commit types
 VALID_TYPES=("build" "ci" "docs" "feat" "fix" "perf" "refactor" "test")
 
+# Generate a plain English summary of the task and work done using AI
+generate_ai_pr_summary() {
+	local original_prompt="$1"
+	local commit_log="$2"
+	local branch_name="$3"
+
+	# Check if claude CLI is available
+	if ! command -v claude >/dev/null 2>&1; then
+		debug_log "Claude CLI not available for PR summary"
+		return 1
+	fi
+
+	debug_log "Using Claude AI to generate PR summary..."
+
+	# Sanitize inputs for AI (truncate if too long)
+	local sanitized_prompt
+	sanitized_prompt=$(echo "$original_prompt" | tr '\n' ' ' | head -c 1000)
+	local sanitized_commits
+	sanitized_commits=$(echo "$commit_log" | head -c 1500)
+
+	local ai_prompt="Generate a PR description for the following work.
+
+ORIGINAL TASK:
+${sanitized_prompt}
+
+COMMITS MADE:
+${sanitized_commits}
+
+BRANCH: ${branch_name}
+
+Generate a PR description with these sections:
+1. **Summary**: 2-3 sentences describing what was requested in plain English
+2. **Changes Made**: Bullet list of what was implemented, based on the commits
+3. **Why**: Brief explanation of why these changes were made
+
+Keep it concise and professional. Output only the PR description, no extra commentary."
+
+	export FORK_JOIN_HOOK_CONTEXT=1
+	local summary=""
+
+	if command -v timeout >/dev/null 2>&1; then
+		summary=$(echo "$ai_prompt" | timeout 15 claude --print --model haiku -p - 2>/dev/null) || true
+	elif command -v gtimeout >/dev/null 2>&1; then
+		summary=$(echo "$ai_prompt" | gtimeout 15 claude --print --model haiku -p - 2>/dev/null) || true
+	else
+		local tmp_output
+		tmp_output=$(mktemp)
+		(echo "$ai_prompt" | claude --print --model haiku -p - >"$tmp_output" 2>/dev/null) &
+		local pid=$!
+		local waited=0
+		while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 15 ]]; do
+			sleep 1
+			waited=$((waited + 1))
+		done
+		if kill -0 "$pid" 2>/dev/null; then
+			debug_log "AI PR summary timed out"
+			kill "$pid" 2>/dev/null || true
+			summary=""
+		else
+			summary=$(cat "$tmp_output")
+		fi
+		rm -f "$tmp_output"
+	fi
+	unset FORK_JOIN_HOOK_CONTEXT
+
+	if [[ -n "$summary" ]]; then
+		debug_log "AI generated PR summary successfully"
+		echo "$summary"
+		return 0
+	else
+		debug_log "AI PR summary was empty"
+		return 1
+	fi
+}
+
+# Generate a fallback PR summary without AI
+generate_fallback_pr_summary() {
+	local original_prompt="$1"
+	local commit_log="$2"
+	local commit_type="$3"
+
+	# Extract first sentence or line from prompt as summary
+	local first_line
+	first_line=$(echo "$original_prompt" | head -1 | sed 's/[[:space:]]*$//')
+	if [[ ${#first_line} -gt 200 ]]; then
+		first_line="${first_line:0:197}..."
+	fi
+
+	# Build changes section from commits
+	local changes_section=""
+	if [[ -n "$commit_log" ]]; then
+		changes_section="## Changes Made
+
+$(echo "$commit_log" | sed 's/^/- /')"
+	fi
+
+	cat <<EOF
+## Summary
+
+${first_line}
+
+${changes_section}
+
+## Why
+
+This PR implements the requested changes as a ${commit_type} task.
+EOF
+}
+
 # Extract commit type from branch name
 get_commit_type_from_branch() {
 	local branch_name="$1"
@@ -244,6 +353,12 @@ main() {
 		exit 0
 	fi
 
+	# Check if plugin should be active (must be GitHub repo)
+	if ! git_is_github_repo; then
+		debug_log "Not a GitHub repository, skipping"
+		exit 0
+	fi
+
 	# Get current branch
 	local current_branch
 	current_branch="$(git_current_branch)"
@@ -252,6 +367,12 @@ main() {
 	# Skip if on main branch (no feature work done)
 	if git_is_main_branch "$current_branch"; then
 		debug_log "On main branch, skipping commit/PR"
+		exit 0
+	fi
+
+	# Only proceed if on a plugin-created branch
+	if ! git_is_plugin_branch "$current_branch"; then
+		debug_log "Not on a plugin-created branch ($current_branch), skipping"
 		exit 0
 	fi
 
@@ -320,7 +441,14 @@ main() {
 	local commit_type
 	commit_type="$(get_commit_type_from_branch "$current_branch")"
 
-	# Generate PR title and body
+	# Get the commit log for this branch (commits since base branch)
+	local base_branch
+	base_branch=$(git_find_base_branch 2>/dev/null || echo "main")
+	local commit_log=""
+	commit_log=$(git log --oneline "${base_branch}..HEAD" 2>/dev/null || git log --oneline -10 2>/dev/null || echo "")
+	debug_log "Commit log: ${commit_log:0:200}..."
+
+	# Generate PR title from branch description
 	local branch_desc
 	branch_desc="$(echo "$current_branch" | sed 's/^[^/]*\///' | tr '-' ' ')"
 
@@ -329,44 +457,63 @@ main() {
 		pr_title="${pr_title:0:69}..."
 	fi
 
-	# Generate PR body
-	local pr_body
-	pr_body="## Summary
-${branch_desc}
+	# Generate PR body using AI or fallback
+	local pr_body=""
 
-## Type
-\`${commit_type}\` - $(
-		case "$commit_type" in
-		feat) echo "A new feature" ;;
-		fix) echo "A bug fix" ;;
-		refactor) echo "Code refactoring" ;;
-		perf) echo "Performance improvement" ;;
-		test) echo "Tests" ;;
-		docs) echo "Documentation" ;;
-		build) echo "Build system changes" ;;
-		ci) echo "CI configuration" ;;
-		*) echo "Changes" ;;
-		esac
-	)
-
-## Branch
-\`$current_branch\`
-"
-
+	# Try AI-generated summary first
 	if [[ -n "$session_prompt" ]]; then
-		pr_body="${pr_body}
-## Original Task
+		pr_body=$(generate_ai_pr_summary "$session_prompt" "$commit_log" "$current_branch") || true
+	fi
+
+	# Fallback if AI failed or no session prompt
+	if [[ -z "$pr_body" ]]; then
+		debug_log "Using fallback PR summary"
+		pr_body=$(generate_fallback_pr_summary "${session_prompt:-$branch_desc}" "$commit_log" "$commit_type")
+	fi
+
+	# Append metadata section
+	local type_desc
+	case "$commit_type" in
+	feat) type_desc="A new feature" ;;
+	fix) type_desc="A bug fix" ;;
+	refactor) type_desc="Code refactoring" ;;
+	perf) type_desc="Performance improvement" ;;
+	test) type_desc="Tests" ;;
+	docs) type_desc="Documentation" ;;
+	build) type_desc="Build system changes" ;;
+	ci) type_desc="CI configuration" ;;
+	*) type_desc="Changes" ;;
+	esac
+
+	# Generate timestamp for this prompt
+	local prompt_timestamp
+	prompt_timestamp=$(format_timestamp)
+
+	pr_body="${pr_body}
+
+---
+
+## Metadata
+
+| Field | Value |
+|-------|-------|
+| Type | \`${commit_type}\` - ${type_desc} |
+| Branch | \`${current_branch}\` |
+| Commits | $(echo "$commit_log" | wc -l | tr -d ' ') |
+
+---
+
+## Prompt History
 
 <details>
-<summary>Click to expand original prompt</summary>
+<summary>📝 Prompt - ${prompt_timestamp}</summary>
 
 \`\`\`
-${session_prompt}
+${session_prompt:-No prompt recorded}
 \`\`\`
 
 </details>
 "
-	fi
 
 	# Create PR
 	debug_log "Creating pull request"
@@ -375,6 +522,13 @@ ${session_prompt}
 		echo "Pull request created for branch $current_branch"
 	else
 		debug_log "Failed to create PR"
+	fi
+
+	# Cleanup: remove tracked files list since session is complete
+	local TRACKED_FILES="${STATE_DIR}/tracked_files.txt"
+	if [[ -f "$TRACKED_FILES" ]]; then
+		rm -f "$TRACKED_FILES"
+		debug_log "Cleaned up tracked files list"
 	fi
 
 	debug_log "Stop hook completed"
