@@ -116,7 +116,7 @@ EOF
 	git add -A
 
 	# Commit changes
-	git commit -m "$COMMIT_MESSAGE" --author="Agent ${AGENT_ID} <agent@fork-join.local>"
+	git commit -m "$COMMIT_MESSAGE" --author="Agent ${AGENT_ID} for $(git config --get user.email)"
 
 	local commit_sha
 	commit_sha="$(git rev-parse HEAD)"

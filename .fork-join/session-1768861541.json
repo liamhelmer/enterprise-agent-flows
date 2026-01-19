@@ -1,0 +1,11 @@
+{
+    "session_id": "session-1768861541",
+    "feature_branch": "feat/pr-prompt-append",
+    "base_branch": "main",
+    "prompt": "In the agent-fork-join plugin, each user prompt used to create the pr must be included at the end every PR description as it's own collapsible content at the end, including the date and time. Add a feature to the agent-fork-join plugin: when the pull request already exists on a feature branch and a new prompt is submitted, spawn a haiku instance to look at the PR and identify if anything in the PR Description needs to change, and append the new prompt to the end of the PR description in a separate accordion with it's own timestamp\n",
+    "state": "STARTED",
+    "started_at": "2026-01-19T22:25:41Z",
+    "agents": [],
+    "merged_count": 0,
+    "conflict_count": 0
+}

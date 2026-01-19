@@ -7,7 +7,7 @@
 # 2) Initializes with CLAUDE.md, AGENTS.md, and the agent-fork-join plugin
 # 3) Creates a prompt requiring 5+ concurrent agents
 # 4) Spawns a Claude instance to run the prompt
-# 5) Verifies branch creation with 5+ commits and a PR
+# 5) Verifies branch creation with 2+ commits and a PR (1 initial + 1 session commit)
 # 6) Optional --clean flag to clean up everything
 #
 # Usage:
@@ -267,52 +267,9 @@ create_test_repo() {
 # Create CLAUDE.md with fork-join plugin configuration
 create_claude_md() {
 	cat >CLAUDE.md <<'EOF'
-# Test Project - Agent Fork-Join E2E Test
-
-This is a test project for validating the agent-fork-join plugin.
-
-## IMPORTANT: E2E Test Requirements
-
-This project tests the agent-fork-join plugin. The following MUST be true:
-
-1. **Branch creation is automatic**: The plugin's UserPromptSubmit hook MUST automatically
-   create and push a feature branch when work begins. You do NOT need to create branches manually.
-
-2. **Commits are automatic**: The plugin's AgentComplete hook MUST automatically commit
-   changes when agents complete their work. You do NOT need to commit manually.
-
-3. **PR creation is automatic**: The plugin MUST create the PR automatically.
-   You do NOT need to create a PR manually.
-
-Just focus on creating the requested files. The plugin handles all git operations.
 
 ## Project Structure
 
-This project will be built by multiple concurrent agents, each creating a separate module.
-
-## Plugin Configuration
-
-The agent-fork-join plugin is configured with:
-- Max concurrent agents: 8
-- Merge strategy: rebase
-- Branch naming: Angular commit types (feat/, fix/, refactor/, etc.)
-- Agent branch prefix: agent/
-
-## Development Rules
-
-1. Each agent creates files in its assigned directory only
-2. All code must include a file header comment
-3. No agent should modify another agent's files
-4. Tests should be created alongside implementation files
-
-## Agent Assignment
-
-When spawning agents for this project:
-- Agent 1: Creates `/src/auth/` module (authentication)
-- Agent 2: Creates `/src/api/` module (API endpoints)
-- Agent 3: Creates `/src/db/` module (database layer)
-- Agent 4: Creates `/src/utils/` module (utility functions)
-- Agent 5: Creates `/src/config/` module (configuration management)
 EOF
 }
 
@@ -320,51 +277,14 @@ EOF
 create_agents_md() {
 	cat >AGENTS.md <<'EOF'
 # Agent Definitions
+When spawning agents for this project:
+- Agent 1: Creates `/src/auth/` module (authentication)
+- Agent 2: Creates `/src/api/` module (API endpoints)
+- Agent 3: Creates `/src/db/` module (database layer)
+- Agent 4: Creates `/src/utils/` module (utility functions)
+- Agent 5: Creates `/src/config/` module (configuration management)
 
 ## Concurrent Agents for Module Development
-
-This project uses 5 specialized agents working in parallel to build different modules.
-
-### Agent 1: AuthAgent
-- **Role**: Authentication module developer
-- **Directory**: `/src/auth/`
-- **Files to create**:
-  - `index.ts` - Main authentication exports
-  - `jwt.ts` - JWT token handling
-  - `middleware.ts` - Auth middleware
-
-### Agent 2: APIAgent
-- **Role**: API endpoint developer
-- **Directory**: `/src/api/`
-- **Files to create**:
-  - `index.ts` - API router setup
-  - `users.ts` - User endpoints
-  - `health.ts` - Health check endpoint
-
-### Agent 3: DBAgent
-- **Role**: Database layer developer
-- **Directory**: `/src/db/`
-- **Files to create**:
-  - `index.ts` - Database connection
-  - `models.ts` - Data models
-  - `migrations.ts` - Migration helpers
-
-### Agent 4: UtilsAgent
-- **Role**: Utility functions developer
-- **Directory**: `/src/utils/`
-- **Files to create**:
-  - `index.ts` - Utility exports
-  - `logger.ts` - Logging utility
-  - `validators.ts` - Input validators
-
-### Agent 5: ConfigAgent
-- **Role**: Configuration management developer
-- **Directory**: `/src/config/`
-- **Files to create**:
-  - `index.ts` - Config exports
-  - `env.ts` - Environment handling
-  - `constants.ts` - Application constants
-
 ## Coordination
 
 All agents should:
@@ -372,6 +292,7 @@ All agents should:
 2. Create all listed files
 3. Include proper TypeScript types
 4. Add file header comments with agent name
+
 EOF
 }
 
@@ -471,40 +392,15 @@ CRITICAL REQUIREMENTS:
 
 Here are the 5 tasks to spawn:
 
-TASK 1: Create src/auth/index.ts
-```typescript
-export function authenticate(token: string): boolean {
-  return token.length > 0;
-}
-```
+TASK 1: Create the scaffolding for the auth module in src/auth/
 
-TASK 2: Create src/api/index.ts
-```typescript
-export function handleRequest(req: any): any {
-  return { status: 'ok', data: req };
-}
-```
+TASK 2: Create the scaffolding for the api module in src/api/
 
-TASK 3: Create src/db/index.ts
-```typescript
-export function query(sql: string): any[] {
-  return [{ sql }];
-}
-```
+TASK 3: Create the scaffolding for the db module in src/db/
 
-TASK 4: Create src/utils/index.ts
-```typescript
-export function log(msg: string): void {
-  console.log(msg);
-}
-```
+TASK 4: Create the scaffolding for the utils module in src/utils/
 
-TASK 5: Create src/config/index.ts
-```typescript
-export function getConfig(): any {
-  return { env: 'development' };
-}
-```
+TASK 5: Create scaffolding for the config module in src/config/
 
 NOW: Call all 5 Task tools in parallel in your next response. Use subagent_type="coder" for each.
 EOF
@@ -764,7 +660,8 @@ verify_results() {
 		log_success "Feature branch found: ${feature_branch}"
 	fi
 
-	# Check commit count (looking for at least 2 commits: initial + modules)
+	# Check commit count (looking for at least 2 commits: initial + session commit)
+	# The plugin now commits all changes in a single commit at session end, not per-file
 	log_info "Checking commit count..."
 	local commit_count
 	if [[ -n "${feature_branch}" ]]; then
@@ -775,10 +672,10 @@ verify_results() {
 		commit_count=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 	fi
 
-	if [[ "${commit_count}" -lt 5 ]]; then
-		errors+=("Expected at least 5 commits (1 initial + 1 per file via PostToolUse hook), found ${commit_count}")
+	if [[ "${commit_count}" -lt 2 ]]; then
+		errors+=("Expected at least 2 commits (1 initial + 1 session commit), found ${commit_count}")
 	else
-		log_success "Commit count: ${commit_count} (meets minimum of 5)"
+		log_success "Commit count: ${commit_count} (meets minimum of 2)"
 	fi
 
 	# Check for PR

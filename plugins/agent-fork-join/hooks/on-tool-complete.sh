@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# PostToolUse Hook - Auto-commits after file writes
+# PostToolUse Hook - Tracks file writes for later commit
 #
 # This hook:
 # 1. Detects when Write/Edit tools complete
-# 2. Automatically stages and commits the changed file
-# 3. Uses Angular-style commit messages based on file path
+# 2. Records the file path for the session-end commit
+# 3. Does NOT commit immediately - the Stop hook handles that
 #
-# This enables the 5-commit minimum requirement without
-# mentioning git in the prompt.
+# This ensures a single commit per agent session rather than per-file commits.
 
 set -euo pipefail
 
@@ -78,13 +77,19 @@ if ! git_is_repo; then
 	exit 0
 fi
 
+# Check if plugin should be active
+if ! git_should_plugin_activate; then
+	debug_log "Plugin not active (not GitHub or wrong branch), skipping"
+	exit 0
+fi
+
 # Get current branch
 current_branch="$(git_current_branch)"
 debug_log "Current branch: $current_branch"
 
-# Skip if on main branch
+# Skip if on main branch (no session started)
 if git_is_main_branch "$current_branch"; then
-	debug_log "On main branch, skipping auto-commit"
+	debug_log "On main branch, skipping file tracking"
 	exit 0
 fi
 
@@ -100,56 +105,24 @@ if ! git status --porcelain "$FILE_PATH" 2>/dev/null | grep -q .; then
 	exit 0
 fi
 
-debug_log "File has changes, preparing to commit"
+debug_log "File has changes, recording for later commit: $FILE_PATH"
 
-# Determine commit type and scope from file path
-get_commit_info() {
-	local file="$1"
-	local type="feat"
-	local scope=""
+# Session state directory
+STATE_DIR="${FORK_JOIN_STATE_DIR:-.fork-join}"
 
-	# Extract scope from path (e.g., src/auth/index.ts -> auth)
-	if [[ "$file" == src/* ]]; then
-		scope=$(echo "$file" | cut -d'/' -f2)
-	elif [[ "$file" == test/* || "$file" == tests/* || "$file" == *_test.* || "$file" == *.test.* ]]; then
-		type="test"
-		scope=$(basename "$(dirname "$file")")
-	elif [[ "$file" == *.md ]]; then
-		type="docs"
-	elif [[ "$file" == .github/* ]]; then
-		type="ci"
-	fi
+# Record the file for later commit (append to tracked files list)
+mkdir -p "$STATE_DIR"
+TRACKED_FILES="${STATE_DIR}/tracked_files.txt"
 
-	echo "$type|$scope"
-}
-
-commit_info=$(get_commit_info "$FILE_PATH")
-commit_type=$(echo "$commit_info" | cut -d'|' -f1)
-commit_scope=$(echo "$commit_info" | cut -d'|' -f2)
-
-# Generate commit message
-filename=$(basename "$FILE_PATH")
-if [[ -n "$commit_scope" && "$commit_scope" != "." ]]; then
-	commit_msg="${commit_type}(${commit_scope}): add ${filename}"
+# Add file to tracked list if not already there
+if ! grep -qxF "$FILE_PATH" "$TRACKED_FILES" 2>/dev/null; then
+	echo "$FILE_PATH" >>"$TRACKED_FILES"
+	debug_log "Added to tracked files: $FILE_PATH"
 else
-	commit_msg="${commit_type}: add ${filename}"
+	debug_log "File already tracked: $FILE_PATH"
 fi
 
-debug_log "Commit message: $commit_msg"
+# Output confirmation (not committing, just tracking)
+echo "Tracked file change: $FILE_PATH (will commit on session end)"
 
-# Stage and commit the file
-git add "$FILE_PATH" 2>/dev/null || true
-
-if git diff --cached --quiet 2>/dev/null; then
-	debug_log "No staged changes after git add"
-	exit 0
-fi
-
-if git commit -m "$commit_msg" 2>&1; then
-	debug_log "Commit successful"
-	echo "Auto-committed: $commit_msg"
-else
-	debug_log "Commit failed"
-fi
-
-debug_log "PostToolUse hook completed"
+debug_log "PostToolUse hook completed - file tracked for later commit"

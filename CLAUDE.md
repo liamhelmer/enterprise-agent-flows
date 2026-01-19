@@ -40,7 +40,7 @@ cd plugins/agent-fork-join/daemon && cargo build --release
 
 | Requirement        | Minimum | Description                                                        |
 | ------------------ | ------- | ------------------------------------------------------------------ |
-| **Commits**        | **5**   | At least 5 commits (1 initial + 1 per file via PostToolUse hook)   |
+| **Commits**        | **1+**  | At least 1 commit per session (single commit at session end)       |
 | **Feature Branch** | 1       | Angular-style branch (feat/, fix/, etc.) created by plugin         |
 | **Pull Request**   | 1       | PR created automatically by plugin with full prompt in description |
 | **Directories**    | 5       | src/auth/, src/api/, src/db/, src/utils/, src/config/              |
@@ -49,11 +49,16 @@ cd plugins/agent-fork-join/daemon && cargo build --release
 
 1. The test prompt MUST NOT mention git operations (commits, branches, PRs)
 2. The plugin handles ALL git operations automatically via hooks:
-   - `UserPromptSubmit` → Creates feature branch
-   - `PostToolUse` → Auto-commits after each file write
-   - `Stop` → Creates PR with complete original prompt
+   - `UserPromptSubmit` → Creates feature branch (if on GitHub repo + default branch)
+   - `PostToolUse` → Tracks file changes (does NOT commit immediately)
+   - `Stop` → Commits ALL changes in a single commit, creates PR
 3. PR description MUST include the complete original prompt (not truncated)
 4. By default, .gitignore should exclude `.fork-join/` files (use `--debug` to keep them)
+
+**Activation Conditions:**
+
+- Plugin only activates for GitHub repositories (origin URL contains github.com)
+- Must be on default branch (main/master) OR plugin-created branch (feat/, fix/, etc.)
 
 ---
 
