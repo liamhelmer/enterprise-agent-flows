@@ -55,7 +55,11 @@ is_feature_branch() {
 	[[ "$branch" =~ ^(build|ci|docs|feat|fix|perf|refactor|test)/ ]]
 }
 
+# Global to track if we should delete the local branch
+SHOULD_DELETE_LOCAL_BRANCH=""
+
 # Merge the PR if it exists and is open
+# Sets SHOULD_DELETE_LOCAL_BRANCH if the PR is already merged and local branch needs cleanup
 merge_pr_if_needed() {
 	local current_branch="$1"
 
@@ -70,13 +74,15 @@ merge_pr_if_needed() {
 		return 0
 	fi
 
-	# Get PR number for current branch
+	# Get PR number for current branch - check all PRs including closed/merged
 	local pr_number
-	pr_number=$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null || echo "")
+	pr_number=$(gh pr list --head "$current_branch" --state all --json number --jq '.[0].number' 2>/dev/null || echo "")
 
 	if [[ -z "$pr_number" ]]; then
 		debug_log "No PR found for branch $current_branch"
-		output "No open PR found for branch: $current_branch"
+		output "No PR found for branch: $current_branch"
+		# Still mark for deletion if on a feature branch with no PR
+		SHOULD_DELETE_LOCAL_BRANCH="$current_branch"
 		return 0
 	fi
 
@@ -104,6 +110,8 @@ merge_pr_if_needed() {
 		if gh pr merge "$pr_number" --squash --delete-branch 2>&1; then
 			output "Successfully merged PR #${pr_number}"
 			debug_log "PR #${pr_number} merged successfully"
+			# Remote branch deleted by gh, but local may still exist
+			SHOULD_DELETE_LOCAL_BRANCH="$current_branch"
 		else
 			output "Error: Failed to merge PR #${pr_number}"
 			output "You may need to merge manually or resolve any issues first."
@@ -113,6 +121,8 @@ merge_pr_if_needed() {
 	"MERGED")
 		output "PR #${pr_number} is already merged."
 		debug_log "PR #${pr_number} already merged"
+		# Mark local branch for deletion since PR is already merged
+		SHOULD_DELETE_LOCAL_BRANCH="$current_branch"
 		;;
 	"CLOSED")
 		output "PR #${pr_number} is closed (not merged)."
@@ -123,6 +133,45 @@ merge_pr_if_needed() {
 		debug_log "PR #${pr_number} has unknown state: $pr_state"
 		;;
 	esac
+
+	return 0
+}
+
+# Delete a local branch
+delete_local_branch() {
+	local branch="$1"
+	local default_branch="$2"
+
+	if [[ -z "$branch" ]]; then
+		return 0
+	fi
+
+	# Don't delete the default branch
+	if [[ "$branch" == "$default_branch" ]]; then
+		return 0
+	fi
+
+	# Check if branch exists locally
+	if ! git show-ref --verify --quiet "refs/heads/$branch"; then
+		debug_log "Branch $branch doesn't exist locally, nothing to delete"
+		return 0
+	fi
+
+	output "Deleting local branch: $branch..."
+
+	if git branch -D "$branch" 2>&1; then
+		output "Deleted local branch: $branch"
+		debug_log "Deleted local branch: $branch"
+	else
+		output "Warning: Could not delete local branch $branch"
+		debug_log "Failed to delete local branch: $branch"
+	fi
+
+	# Also try to delete remote tracking branch if it exists
+	if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+		git branch -dr "origin/$branch" 2>/dev/null || true
+		debug_log "Deleted remote tracking branch: origin/$branch"
+	fi
 
 	return 0
 }
