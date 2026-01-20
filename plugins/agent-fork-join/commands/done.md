@@ -82,7 +82,20 @@ If there are merge conflicts:
 1. First try to auto-resolve by accepting remote changes: `git checkout --theirs . && git add -A`
 2. If that fails, show the user the conflicting files and ask them to resolve manually
 
-### Step 5: Clean Up Session State
+### Step 5: Delete Local Feature Branch
+
+If the PR was merged (either just now or previously), delete the local feature branch:
+
+```bash
+# Delete local branch if it was marked for deletion
+if [[ -n "$branch_to_delete" ]]; then
+    git branch -D "$branch_to_delete"
+    # Also clean up remote tracking branch
+    git branch -dr "origin/$branch_to_delete" 2>/dev/null || true
+fi
+```
+
+### Step 6: Clean Up Session State
 
 ```bash
 # Remove session tracking files
