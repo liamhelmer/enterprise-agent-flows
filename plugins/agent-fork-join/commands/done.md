@@ -103,7 +103,7 @@ rm -f .fork-join/current_session
 rm -f .fork-join/tracked_files.txt
 ```
 
-### Step 6: Run Compact
+### Step 7: Run Compact
 
 After all steps complete successfully, run the `/compact` command to consolidate conversation history.
 
