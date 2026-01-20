@@ -120,9 +120,8 @@ Report progress at each step:
 ```
 === Completing PR Workflow ===
 
-Checking for open PR on branch feat/my-feature...
-Found open PR #42, merging with squash...
-Successfully merged PR #42
+Checking for PR on branch feat/my-feature...
+PR #42 is already merged.
 
 Switching to main branch...
 Switched to main
@@ -130,7 +129,10 @@ Switched to main
 Pulling latest changes...
 Already up to date.
 
+Deleting local branch: feat/my-feature...
+Deleted local branch: feat/my-feature
+
 === Workflow Complete ===
 
-Running /compact to consolidate conversation history...
+Run /compact to consolidate conversation history.
 ```
