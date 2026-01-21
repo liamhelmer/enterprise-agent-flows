@@ -198,12 +198,6 @@ generate_ai_branch_name() {
 	local prompt_text="$1"
 	local ai_branch=""
 
-	# Check if claude CLI is available
-	if ! command -v claude >/dev/null 2>&1; then
-		debug_log "Claude CLI not available, falling back to heuristic"
-		return 1
-	fi
-
 	debug_log "Using Claude AI to generate branch name..."
 
 	# Sanitize the prompt for inclusion in AI request (first 500 chars, single line)
@@ -225,36 +219,10 @@ TASK: ${sanitized_prompt}
 
 OUTPUT ONLY THE BRANCH NAME (e.g., feat/add-user-auth):"
 
-	# Call Claude CLI with minimal settings and 10s timeout
-	# Set FORK_JOIN_HOOK_CONTEXT to prevent recursive hook calls
+	# Call Claude CLI with speed optimizations
 	export FORK_JOIN_HOOK_CONTEXT=1
 	local raw_response=""
-
-	# Use timeout to prevent blocking (10 seconds max)
-	if command -v timeout >/dev/null 2>&1; then
-		raw_response=$(echo "$ai_prompt" | timeout 10 claude --print --model haiku -p - 2>/dev/null) || true
-	elif command -v gtimeout >/dev/null 2>&1; then
-		raw_response=$(echo "$ai_prompt" | gtimeout 10 claude --print --model haiku -p - 2>/dev/null) || true
-	else
-		# Fallback: run without timeout but with background kill after 10s
-		local tmp_output
-		tmp_output=$(mktemp)
-		(echo "$ai_prompt" | claude --print --model haiku -p - >"$tmp_output" 2>/dev/null) &
-		local pid=$!
-		local waited=0
-		while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 10 ]]; do
-			sleep 1
-			waited=$((waited + 1))
-		done
-		if kill -0 "$pid" 2>/dev/null; then
-			debug_log "AI call timed out after 10s, killing"
-			kill "$pid" 2>/dev/null || true
-			raw_response=""
-		else
-			raw_response=$(cat "$tmp_output")
-		fi
-		rm -f "$tmp_output"
-	fi
+	raw_response=$(claude_fast_call "$ai_prompt" 10)
 	unset FORK_JOIN_HOOK_CONTEXT
 
 	debug_log "AI raw response: '${raw_response:0:100}...'"
@@ -395,11 +363,6 @@ analyze_pr_for_updates() {
 	local current_body="$1"
 	local new_prompt="$2"
 
-	if ! command -v claude >/dev/null 2>&1; then
-		debug_log "Claude CLI not available for PR analysis"
-		return 1
-	fi
-
 	debug_log "Using Claude haiku to analyze PR description..."
 
 	# Truncate inputs for AI (prevent context overflow)
@@ -429,29 +392,7 @@ Be concise. Output nothing else."
 
 	export FORK_JOIN_HOOK_CONTEXT=1
 	local analysis=""
-	if command -v timeout >/dev/null 2>&1; then
-		analysis=$(echo "$ai_prompt" | timeout 15 claude --print --model haiku -p - 2>/dev/null) || true
-	elif command -v gtimeout >/dev/null 2>&1; then
-		analysis=$(echo "$ai_prompt" | gtimeout 15 claude --print --model haiku -p - 2>/dev/null) || true
-	else
-		local tmp_output
-		tmp_output=$(mktemp)
-		(echo "$ai_prompt" | claude --print --model haiku -p - >"$tmp_output" 2>/dev/null) &
-		local pid=$!
-		local waited=0
-		while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 15 ]]; do
-			sleep 1
-			waited=$((waited + 1))
-		done
-		if kill -0 "$pid" 2>/dev/null; then
-			debug_log "AI analysis timed out"
-			kill "$pid" 2>/dev/null || true
-			analysis=""
-		else
-			analysis=$(cat "$tmp_output")
-		fi
-		rm -f "$tmp_output"
-	fi
+	analysis=$(claude_fast_call "$ai_prompt" 15)
 	unset FORK_JOIN_HOOK_CONTEXT
 
 	if [[ -n "$analysis" ]]; then

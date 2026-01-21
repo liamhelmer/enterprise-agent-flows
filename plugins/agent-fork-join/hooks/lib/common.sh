@@ -91,3 +91,52 @@ cleanup() {
 setup_cleanup_trap() {
 	trap cleanup EXIT INT TERM
 }
+
+# Non-interactive Claude call with speed optimizations
+# Usage: claude_fast_call "prompt" [timeout_seconds]
+# Returns: AI response on stdout, or empty string on failure
+claude_fast_call() {
+	local prompt="$1"
+	local timeout_seconds="${2:-15}"
+
+	# Check if claude CLI is available
+	if ! command -v claude >/dev/null 2>&1; then
+		log_debug "Claude CLI not available"
+		return 1
+	fi
+
+	# Build the claude command with all speed optimization flags
+	local claude_cmd="claude -p --model haiku --no-chrome --no-session-persistence"
+	claude_cmd+=" --setting-sources '' --disable-slash-commands"
+	claude_cmd+=" --strict-mcp-config --mcp-config ''"
+
+	local result=""
+
+	# Use timeout if available (Linux has timeout, macOS has gtimeout via coreutils)
+	if command -v timeout >/dev/null 2>&1; then
+		result=$(echo "$prompt" | timeout "$timeout_seconds" bash -c "$claude_cmd -p -" 2>/dev/null) || true
+	elif command -v gtimeout >/dev/null 2>&1; then
+		result=$(echo "$prompt" | gtimeout "$timeout_seconds" bash -c "$claude_cmd -p -" 2>/dev/null) || true
+	else
+		# Fallback: use background process with sleep-based timeout
+		local tmp_output
+		tmp_output=$(mktemp)
+		(echo "$prompt" | bash -c "$claude_cmd -p -" >"$tmp_output" 2>/dev/null) &
+		local pid=$!
+		local waited=0
+		while kill -0 $pid 2>/dev/null && [[ $waited -lt $timeout_seconds ]]; do
+			sleep 1
+			((waited++))
+		done
+		if kill -0 $pid 2>/dev/null; then
+			kill $pid 2>/dev/null || true
+			wait $pid 2>/dev/null || true
+		fi
+		if [[ -f "$tmp_output" ]]; then
+			result=$(cat "$tmp_output")
+			rm -f "$tmp_output"
+		fi
+	fi
+
+	echo "$result"
+}

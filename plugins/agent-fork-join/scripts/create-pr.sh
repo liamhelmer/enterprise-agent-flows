@@ -11,6 +11,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="${FORK_JOIN_STATE_DIR:-.fork-join}"
 
+# Source common utilities for claude_fast_call
+if [[ -f "${SCRIPT_DIR}/../hooks/lib/common.sh" ]]; then
+	source "${SCRIPT_DIR}/../hooks/lib/common.sh"
+fi
+
 # Arguments
 SESSION_ID="${1:-}"
 
@@ -19,10 +24,6 @@ generate_ai_summary() {
 	local prompt="$1"
 	local agent_work="$2"
 	local commit_log="$3"
-
-	if ! command -v claude >/dev/null 2>&1; then
-		return 1
-	fi
 
 	local sanitized_prompt
 	sanitized_prompt=$(echo "$prompt" | tr '\n' ' ' | head -c 800)
@@ -46,10 +47,15 @@ Be concise and professional. Output only the description."
 
 	export FORK_JOIN_HOOK_CONTEXT=1
 	local summary=""
-	if command -v timeout >/dev/null 2>&1; then
-		summary=$(echo "$ai_prompt" | timeout 15 claude --print --model haiku -p - 2>/dev/null) || true
-	elif command -v gtimeout >/dev/null 2>&1; then
-		summary=$(echo "$ai_prompt" | gtimeout 15 claude --print --model haiku -p - 2>/dev/null) || true
+	# Use claude_fast_call if available, otherwise fall back to direct call
+	if type claude_fast_call &>/dev/null; then
+		summary=$(claude_fast_call "$ai_prompt" 15)
+	elif command -v claude >/dev/null 2>&1; then
+		if command -v timeout >/dev/null 2>&1; then
+			summary=$(echo "$ai_prompt" | timeout 15 claude --print --model haiku -p - 2>/dev/null) || true
+		elif command -v gtimeout >/dev/null 2>&1; then
+			summary=$(echo "$ai_prompt" | gtimeout 15 claude --print --model haiku -p - 2>/dev/null) || true
+		fi
 	fi
 	unset FORK_JOIN_HOOK_CONTEXT
 

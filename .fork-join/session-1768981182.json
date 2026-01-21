@@ -1,0 +1,11 @@
+{
+    "session_id": "session-1768981182",
+    "feature_branch": "feat/non-interactive-claude-calls",
+    "base_branch": "main",
+    "prompt": "Update agent-fork-join to invoke claude non-interactively with these commands to improve speed when doing prs and git commit messages: claude -p ping --model haiku --no-chrome --no-session-persistence --setting-sources '' --tools 'Bash,Edit,Read,git,gh' --disable-slash-commands --strict-mcp-config --mcp-config '' \"\n",
+    "state": "STARTED",
+    "started_at": "2026-01-21T07:39:42Z",
+    "agents": [],
+    "merged_count": 0,
+    "conflict_count": 0
+}

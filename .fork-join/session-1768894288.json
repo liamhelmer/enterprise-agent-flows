@@ -1,0 +1,11 @@
+{
+    "session_id": "session-1768894288",
+    "feature_branch": "feat/check-pr-merge-status",
+    "base_branch": "main",
+    "prompt": "for the /done feature, check and see if the current pr is already merged. if it is, then switch to main, pull the latest, and delete the branch\n",
+    "state": "STARTED",
+    "started_at": "2026-01-20T07:31:28Z",
+    "agents": [],
+    "merged_count": 0,
+    "conflict_count": 0
+}

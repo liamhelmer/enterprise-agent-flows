@@ -1,0 +1,4 @@
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/hooks/lib/common.sh
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/hooks/on-session-complete.sh
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/hooks/on-prompt-submit.sh
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/scripts/create-pr.sh
