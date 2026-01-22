@@ -93,6 +93,64 @@ setup_cleanup_trap() {
 }
 
 # ==========================================
+# JIRA Config Cache Functions (Fast Path)
+# ==========================================
+
+# Cache file locations (no secrets stored - JIRA_API_TOKEN always from env)
+JIRA_CONFIG_CACHE=".jira/config.cache"
+JIRA_TICKET_CACHE=".jira/current-ticket.cache"
+
+# Get cached JIRA config value (fast - no bd calls)
+# Usage: jira_get_cached_config "JIRA_URL"
+# Returns: cached value or empty string
+jira_get_cached_config() {
+	local key="$1"
+	if [[ -f "$JIRA_CONFIG_CACHE" ]]; then
+		local value
+		value=$(grep "^${key}=" "$JIRA_CONFIG_CACHE" 2>/dev/null | head -1 | cut -d'"' -f2)
+		echo "$value"
+	fi
+}
+
+# Get cached ticket info (fast - no bd calls)
+# Usage: jira_get_cached_ticket "JIRA_KEY"
+# Returns: cached value or empty string
+jira_get_cached_ticket() {
+	local key="$1"
+	if [[ -f "$JIRA_TICKET_CACHE" ]]; then
+		local value
+		value=$(grep "^${key}=" "$JIRA_TICKET_CACHE" 2>/dev/null | head -1 | cut -d'"' -f2)
+		echo "$value"
+	fi
+}
+
+# Update a value in the ticket cache
+# Usage: jira_update_ticket_cache "ISSUE_STATUS" "in_progress"
+jira_update_ticket_cache() {
+	local key="$1"
+	local value="$2"
+	if [[ -f "$JIRA_TICKET_CACHE" ]]; then
+		sed -i.bak "s/^${key}=.*/${key}=\"${value}\"/" "$JIRA_TICKET_CACHE" 2>/dev/null || true
+		rm -f "${JIRA_TICKET_CACHE}.bak" 2>/dev/null || true
+	fi
+}
+
+# Check if ticket cache exists and is valid
+jira_has_ticket_cache() {
+	[[ -f "$JIRA_TICKET_CACHE" ]]
+}
+
+# Check if config cache exists and is valid (less than 1 hour old)
+jira_has_valid_config_cache() {
+	if [[ ! -f "$JIRA_CONFIG_CACHE" ]]; then
+		return 1
+	fi
+	local cache_age
+	cache_age=$(($(date +%s) - $(stat -f %m "$JIRA_CONFIG_CACHE" 2>/dev/null || stat -c %Y "$JIRA_CONFIG_CACHE" 2>/dev/null || echo 0)))
+	[[ $cache_age -lt 3600 ]] # 1 hour
+}
+
+# ==========================================
 # Beads Issue Tracking Functions
 # ==========================================
 

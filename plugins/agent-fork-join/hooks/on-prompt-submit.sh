@@ -502,24 +502,58 @@ main() {
 	fi
 	debug_log "Confirmed: in a git repository"
 
-	# Check if current beads issue is closed - if so, clean up and prompt for next ticket
+	# Check for current ticket using cached data (fast path - no bd calls)
+	local TICKET_CACHE=".jira/current-ticket.cache"
 	local current_issue=""
-	if current_issue=$(beads_get_current_issue 2>/dev/null); then
+	local jira_key=""
+	local issue_status=""
+
+	if [[ -f "$TICKET_CACHE" ]]; then
+		# Fast path: read from cache (no bd calls needed)
+		source "$TICKET_CACHE" 2>/dev/null || true
+		current_issue="${BEADS_ISSUE:-}"
+		jira_key="${JIRA_KEY:-}"
+		issue_status="${ISSUE_STATUS:-}"
+		debug_log "Loaded ticket from cache: $current_issue ($jira_key) status=$issue_status"
+	elif current_issue=$(beads_get_current_issue 2>/dev/null); then
+		# Fallback: read from beads if cache missing
+		debug_log "Cache missing, loading from beads: $current_issue"
+		jira_key=$(beads_get_jira_key "$current_issue" 2>/dev/null || echo "")
+		issue_status=$(beads_get_issue_field "$current_issue" "status" 2>/dev/null || echo "open")
+	fi
+
+	if [[ -n "$current_issue" ]]; then
 		debug_log "Found current beads issue: $current_issue"
 
-		# Sync with JIRA to get latest status
-		bd jira sync --pull 2>/dev/null || true
+		# Check if ticket status needs to be set to "in_progress"
+		if [[ "$issue_status" != "in_progress" && "$issue_status" != "closed" ]]; then
+			debug_log "Setting issue $current_issue to in_progress (was: $issue_status)"
+			log_info "Setting $jira_key to In Progress..."
 
-		if beads_is_issue_closed "$current_issue"; then
-			# Get JIRA key for display
-			local jira_key
-			jira_key=$(beads_get_jira_key "$current_issue" 2>/dev/null || echo "$current_issue")
+			# Update status via beads (this will also sync to JIRA)
+			if beads_update_status "$current_issue" "in_progress" 2>/dev/null; then
+				debug_log "Successfully set $current_issue to in_progress"
 
+				# Update the cache file with new status
+				if [[ -f "$TICKET_CACHE" ]]; then
+					sed -i.bak 's/^ISSUE_STATUS=.*/ISSUE_STATUS="in_progress"/' "$TICKET_CACHE" 2>/dev/null || true
+					rm -f "${TICKET_CACHE}.bak" 2>/dev/null || true
+				fi
+
+				echo "Set $jira_key to In Progress"
+			else
+				debug_log "Failed to set $current_issue to in_progress"
+			fi
+		fi
+
+		# Check if issue is closed (sync first to get latest status)
+		if [[ "$issue_status" == "closed" ]] || beads_is_issue_closed "$current_issue" 2>/dev/null; then
 			debug_log "Current issue $current_issue is closed, cleaning up"
 			log_info "Current beads issue $current_issue ($jira_key) is closed"
 
-			# Clean up the current-issue file
+			# Clean up tracking files
 			beads_clear_current_issue
+			rm -f "$TICKET_CACHE" 2>/dev/null || true
 
 			# Signal to Claude to run /jira:work
 			echo ""

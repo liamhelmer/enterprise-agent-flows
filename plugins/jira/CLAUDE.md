@@ -47,28 +47,78 @@ The command will:
 
 ### /jira:work - Start Working on a Ticket
 
-Use `/jira:work` to start working on a JIRA ticket.
+Use `/jira:work [TICKET-ID]` to start working on a JIRA ticket.
+
+**Usage:**
+
+- `/jira:work PGF-369` - Start working on PGF-369 directly (fast)
+- `/jira:work 369` - Same as above (project prefix auto-added)
+- `/jira:work` - List available tickets for selection
 
 The command will:
 
-1. **Check Prerequisites**
+1. **Check Prerequisites & Cache**
    - Verify JIRA is configured (run `/jira:setup` if not)
+   - Load/refresh `.jira/config.cache` for fast lookups
 
-2. **Sync with JIRA**
+2. **Handle Ticket Argument (if provided)**
+   - Skip ticket selection if ticket ID argument given
+   - Normalize ticket ID (add project prefix if just a number)
+
+3. **Sync with JIRA**
    - Pull latest tickets from JIRA via beads
 
-3. **Present Ticket Selection**
+4. **Present Ticket Selection (only if no argument)**
    - List open tickets, prioritizing those assigned to the user
-   - Attempt to guess the best match if context is provided
-   - Allow user to select or enter ticket ID manually
+   - Use jq filtering for efficient JSON processing
 
-4. **Map JIRA to Beads Issue**
+5. **Map JIRA to Beads Issue**
    - Find the beads issue ID from the selected JIRA ticket key
    - The beads issue contains the JIRA URL in its `external_ref` field
 
-5. **Set Up Tracking**
+6. **Set Up Tracking & Cache**
    - Write the beads issue ID to `.beads/current-issue`
-   - agent-fork-join will detect this file for smart commits
+   - Create `.jira/current-ticket.cache` for fast hook access
+   - agent-fork-join will detect these files for smart commits
+
+## Auto "In Progress" Status
+
+When you submit a prompt with a ticket set, the hook will:
+
+1. Read ticket status from `.jira/current-ticket.cache` (fast, no bd calls)
+2. If status is not "in_progress", automatically update it
+3. Sync the status change to JIRA
+4. Update the cache with new status
+
+This ensures tickets are automatically marked "In Progress" when you start working.
+
+## Caching for Fast Lookups
+
+To minimize latency, the plugin caches JIRA config and ticket data locally:
+
+| File                         | Purpose                | Contents                               |
+| ---------------------------- | ---------------------- | -------------------------------------- |
+| `.jira/config.cache`         | JIRA config (1hr TTL)  | URL, project, username, label          |
+| `.jira/current-ticket.cache` | Current ticket details | Beads ID, JIRA key, URL, title, status |
+| `.beads/current-issue`       | Beads issue ID         | Just the ID (e.g., `bd-100`)           |
+
+**Security:** `JIRA_API_TOKEN` is NEVER stored in cache files. It must always come from the environment variable.
+
+**Cache structure:**
+
+```
+.jira/
+├── config.cache           # JIRA URL, project, username (no secrets)
+└── current-ticket.cache   # Current ticket details for fast hook access
+
+.beads/
+├── current-issue          # Contains beads issue ID (e.g., "bd-100")
+├── issues/                # Beads issue storage
+│   ├── bd-100.md
+│   ├── bd-101.md
+│   └── ...
+└── config.json            # JIRA configuration
+```
 
 ## Beads Issue Tracking
 
@@ -78,16 +128,6 @@ The `.beads/current-issue` file contains the beads issue ID (e.g., `bd-100`). Th
 - `title`: Issue title/summary
 - `external_ref`: JIRA URL (e.g., `https://badal.atlassian.net/browse/PGF-123`)
 - `status`: Issue status (open, in_progress, blocked, deferred, closed)
-
-```
-.beads/
-├── current-issue     # Contains beads issue ID (e.g., "bd-100")
-├── issues/           # Beads issue storage
-│   ├── bd-100.md
-│   ├── bd-101.md
-│   └── ...
-└── config.json       # JIRA configuration
-```
 
 ## Integration with agent-fork-join
 
@@ -151,26 +191,36 @@ User: /jira:setup
     ▼
 ┌─────────────────────────────────────────┐
 │ Configure JIRA + beads integration      │
+│ Creates .jira/config.cache              │
 └─────────────────────────────────────────┘
     │
     ▼
-User: /jira:work
+User: /jira:work PGF-123   (or just /jira:work to list)
     │
     ▼
 ┌─────────────────────────────────────────┐
+│ Load config from cache (fast)           │
 │ Sync tickets from JIRA via beads        │
-│ Present ticket selection (JIRA keys)    │
 │ Map JIRA key → beads issue ID           │
 │ Create .beads/current-issue             │
+│ Create .jira/current-ticket.cache       │
 └─────────────────────────────────────────┘
     │
     ▼
-User works on code...
+User submits first prompt...
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│ Hook reads cache (no bd calls)          │
+│ Auto-set status to "In Progress"        │
+│ Sync status change to JIRA              │
+│ Update cache                            │
+└─────────────────────────────────────────┘
     │
     ▼
 agent-fork-join hooks detect .beads/current-issue
     │
-    ├── Extract JIRA key from beads issue
+    ├── Read JIRA key from cache (fast)
     ├── Commit: "PGF-123: feat: add feature"
     │
     ├── PR created → Comment on beads issue (syncs to JIRA)
@@ -183,7 +233,7 @@ User: /done
 │ Ask about issue status change           │
 │ PR merged → Comment on beads issue      │
 │ Status changes sync to JIRA             │
-│ Clean up .beads/current-issue (if Done) │
+│ Clean up caches (if Done)               │
 └─────────────────────────────────────────┘
 ```
 
