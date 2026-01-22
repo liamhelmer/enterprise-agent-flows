@@ -156,7 +156,75 @@ STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 EOF
 ```
 
-### Step 7: Show Confirmation
+### Step 7: Offer Branch Creation (if on main branch)
+
+Check if the user is on the main/master branch and offer to create a feature branch:
+
+```bash
+# Get current branch
+current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+default_branch=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "main")
+
+# Check if on main/master/default branch
+if [[ "$current_branch" == "main" || "$current_branch" == "master" || "$current_branch" == "$default_branch" ]]; then
+    # Generate suggested branch name from ticket
+    # Format: feat/PGF-123-short-description (Angular style)
+
+    # Determine branch type from ticket title
+    title_lower=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
+    if [[ "$title_lower" == *"fix"* || "$title_lower" == *"bug"* ]]; then
+        branch_type="fix"
+    elif [[ "$title_lower" == *"refactor"* ]]; then
+        branch_type="refactor"
+    elif [[ "$title_lower" == *"doc"* ]]; then
+        branch_type="docs"
+    elif [[ "$title_lower" == *"test"* ]]; then
+        branch_type="test"
+    else
+        branch_type="feat"
+    fi
+
+    # Create slug from title (lowercase, hyphens, max 40 chars)
+    slug=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-40)
+
+    suggested_branch="${branch_type}/${JIRA_KEY}-${slug}"
+fi
+```
+
+**Use AskUserQuestion** to let the user confirm, edit, or skip:
+
+- Header: "Branch"
+- Question: "Create a feature branch for this ticket?"
+- Options:
+  - "Create: feat/PGF-123-implement-login" - Use suggested name
+  - "Edit branch name" - Let user specify custom name
+  - "Stay on main" - Don't create a branch
+
+**If user selects "Create":**
+
+```bash
+git checkout -b "$suggested_branch"
+git push -u origin "$suggested_branch"
+echo "Created and pushed branch: $suggested_branch"
+```
+
+**If user selects "Edit branch name":**
+
+- Ask for the custom branch name
+- Validate it follows Angular convention (feat/, fix/, etc.)
+- If missing type prefix, add the suggested one
+
+```bash
+git checkout -b "$custom_branch"
+git push -u origin "$custom_branch"
+```
+
+**If user selects "Stay on main":**
+
+- Skip branch creation
+- Note: The on-prompt-submit hook will create a branch automatically on the first code-changing prompt
+
+### Step 8: Show Confirmation
 
 Display confirmation:
 
@@ -168,6 +236,7 @@ JIRA Ticket: PGF-123
 Summary:     Implement login feature
 URL:         https://badal.atlassian.net/browse/PGF-123
 Status:      open
+Branch:      feat/PGF-123-implement-login (or "main - branch will be created on first prompt")
 
 Cached config: .jira/config.cache
 Cached ticket: .jira/current-ticket.cache

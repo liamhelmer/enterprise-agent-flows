@@ -81,6 +81,12 @@ The command will:
    - Create `.jira/current-ticket.cache` for fast hook access
    - agent-fork-join will detect these files for smart commits
 
+7. **Offer Branch Creation (if on main)**
+   - If on main/master branch, suggest creating a feature branch
+   - Generate branch name from ticket: `feat/PGF-123-short-description`
+   - User can: accept, edit the name, or stay on main
+   - If staying on main, branch created automatically on first prompt
+
 ## Auto "In Progress" Status
 
 When you submit a prompt with a ticket set, the hook will:
