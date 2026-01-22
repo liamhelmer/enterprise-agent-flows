@@ -49,6 +49,15 @@ fi
 # Valid Angular commit types
 VALID_TYPES=("build" "ci" "docs" "feat" "fix" "perf" "refactor" "test")
 
+# Get current JIRA ticket if available
+CURRENT_JIRA_TICKET=""
+JIRA_TICKET_URL=""
+if current_ticket=$(jira_get_current_ticket 2>/dev/null); then
+	CURRENT_JIRA_TICKET="$current_ticket"
+	JIRA_TICKET_URL=$(jira_get_ticket_field "$current_ticket" "url" 2>/dev/null || echo "")
+	debug_log "JIRA ticket detected: $CURRENT_JIRA_TICKET"
+fi
+
 # Generate a plain English summary of the task and work done using AI
 generate_ai_pr_summary() {
 	local original_prompt="$1"
@@ -268,21 +277,32 @@ ${body}"
 }
 
 # Generate commit message (tries AI first, falls back to heuristic)
+# If JIRA ticket is set, prepends ticket ID for smart commits
 generate_commit_message() {
 	local changes="$1"
 	local session_prompt="$2"
 	local branch_name="$3"
 
+	local commit_msg=""
+
 	# Try AI first
-	local commit_msg
 	if commit_msg="$(generate_ai_commit_message "$changes" "$session_prompt" "$branch_name")"; then
-		echo "$commit_msg"
-		return 0
+		:
+	else
+		# Fall back to heuristic
+		debug_log "Falling back to heuristic commit message generation"
+		commit_msg=$(generate_heuristic_commit_message "$changes" "$session_prompt" "$branch_name")
 	fi
 
-	# Fall back to heuristic
-	debug_log "Falling back to heuristic commit message generation"
-	generate_heuristic_commit_message "$changes" "$session_prompt" "$branch_name"
+	# Prepend JIRA ticket ID for smart commits if available
+	if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+		# Format: "PGF-123: feat(scope): message"
+		# This enables JIRA Smart Commits
+		commit_msg="${CURRENT_JIRA_TICKET}: ${commit_msg}"
+		debug_log "Prepended JIRA ticket to commit message"
+	fi
+
+	echo "$commit_msg"
 }
 
 main() {
@@ -393,7 +413,13 @@ main() {
 	local branch_desc
 	branch_desc="$(echo "$current_branch" | sed 's/^[^/]*\///' | tr '-' ' ')"
 
-	local pr_title="${commit_type}: ${branch_desc}"
+	# Include JIRA ticket in PR title for smart linking
+	local pr_title
+	if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+		pr_title="${CURRENT_JIRA_TICKET}: ${commit_type}: ${branch_desc}"
+	else
+		pr_title="${commit_type}: ${branch_desc}"
+	fi
 	if [[ ${#pr_title} -gt 72 ]]; then
 		pr_title="${pr_title:0:69}..."
 	fi
@@ -430,8 +456,30 @@ main() {
 	local prompt_timestamp
 	prompt_timestamp=$(format_timestamp)
 
-	pr_body="${pr_body}
+	# Add JIRA ticket section if available
+	local jira_section=""
+	if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+		local jira_url_display="$JIRA_TICKET_URL"
+		if [[ -z "$jira_url_display" ]]; then
+			# Try to construct URL from beads config
+			local base_url
+			base_url=$(jira_get_url)
+			if [[ -n "$base_url" ]]; then
+				jira_url_display="${base_url}/browse/${CURRENT_JIRA_TICKET}"
+			fi
+		fi
 
+		jira_section="
+## JIRA Ticket
+
+| Field | Value |
+|-------|-------|
+| Ticket | [\`${CURRENT_JIRA_TICKET}\`](${jira_url_display}) |
+"
+	fi
+
+	pr_body="${pr_body}
+${jira_section}
 ---
 
 ## Metadata
@@ -458,9 +506,44 @@ ${session_prompt:-No prompt recorded}
 
 	# Create PR
 	debug_log "Creating pull request"
-	if gh pr create --title "$pr_title" --body "$pr_body" --head "$current_branch" 2>&1; then
+	local pr_url=""
+	if pr_url=$(gh pr create --title "$pr_title" --body "$pr_body" --head "$current_branch" 2>&1); then
 		debug_log "PR created successfully"
 		echo "Pull request created for branch $current_branch"
+
+		# Comment on JIRA ticket about the PR (if ticket is set)
+		if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+			debug_log "Commenting on JIRA ticket $CURRENT_JIRA_TICKET about PR"
+
+			# Extract PR URL from output or construct it
+			local actual_pr_url
+			actual_pr_url=$(echo "$pr_url" | grep -oE 'https://github.com/[^[:space:]]+' | head -1)
+			if [[ -z "$actual_pr_url" ]]; then
+				# Try to get it from gh
+				actual_pr_url=$(gh pr view --json url --jq '.url' 2>/dev/null || echo "")
+			fi
+
+			# Build a summary for JIRA comment
+			local jira_comment="Pull request created for this ticket:
+
+**PR Title:** ${pr_title}
+
+**PR URL:** ${actual_pr_url:-PR URL not available}
+
+**Summary:**
+$(echo "$pr_body" | head -20 | sed 's/^/> /')
+
+---
+_Automated comment from agent-fork-join_"
+
+			# Add comment via beads
+			if jira_add_comment "$CURRENT_JIRA_TICKET" "$jira_comment" 2>/dev/null; then
+				debug_log "Successfully commented on JIRA ticket"
+				echo "Commented on JIRA ticket $CURRENT_JIRA_TICKET"
+			else
+				debug_log "Failed to comment on JIRA ticket (beads may not support this)"
+			fi
+		fi
 	else
 		debug_log "Failed to create PR"
 	fi

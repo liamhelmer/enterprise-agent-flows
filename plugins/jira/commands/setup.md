@@ -1,9 +1,9 @@
 ---
-name: "jira-setup"
+name: "setup"
 description: "Set up JIRA integration with beads for bidirectional issue synchronization."
 ---
 
-# /jira-setup Command
+# /jira:setup Command
 
 Configure JIRA Cloud integration with beads issue tracking. This command validates prerequisites, guides you through configuration, and performs initial synchronization.
 
@@ -45,7 +45,7 @@ Then set it in your environment:
 
 For persistence, add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
 
-After setting the token, run /jira-setup again.
+After setting the token, run /jira:setup again.
 ```
 
 **If beads CLI is not installed**, tell the user:
@@ -58,7 +58,7 @@ Install beads:
 
 Or download from: https://github.com/beads-dev/beads/releases
 
-After installation, run /jira-setup again.
+After installation, run /jira:setup again.
 ```
 
 **IMPORTANT**: If any prerequisite is missing, STOP here and do not proceed to the next steps.

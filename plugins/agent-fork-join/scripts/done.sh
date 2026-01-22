@@ -58,6 +58,21 @@ is_feature_branch() {
 # Global to track if we should delete the local branch
 SHOULD_DELETE_LOCAL_BRANCH=""
 
+# Global to track JIRA ticket for this session
+CURRENT_JIRA_TICKET=""
+JIRA_TICKET_URL=""
+
+# Get current JIRA ticket if available
+get_jira_ticket() {
+	if [[ -f "${SCRIPT_DIR}/../hooks/lib/common.sh" ]]; then
+		if current_ticket=$(jira_get_current_ticket 2>/dev/null); then
+			CURRENT_JIRA_TICKET="$current_ticket"
+			JIRA_TICKET_URL=$(jira_get_ticket_field "$current_ticket" "url" 2>/dev/null || echo "")
+			debug_log "JIRA ticket detected: $CURRENT_JIRA_TICKET"
+		fi
+	fi
+}
+
 # Check PR status (LOCAL ONLY - no remote modifications)
 # Sets SHOULD_DELETE_LOCAL_BRANCH if the PR was merged
 check_pr_status() {
@@ -99,6 +114,20 @@ check_pr_status() {
 		debug_log "PR #${pr_number} already merged"
 		# Mark local branch for deletion since PR was merged
 		SHOULD_DELETE_LOCAL_BRANCH="$current_branch"
+
+		# Comment on JIRA ticket that PR was merged
+		if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+			debug_log "Commenting on JIRA ticket about merge"
+			local merge_comment="Pull request merged.
+
+**PR:** #${pr_number}
+
+---
+_Automated comment from agent-fork-join_"
+			if jira_add_comment "$CURRENT_JIRA_TICKET" "$merge_comment" 2>/dev/null; then
+				output "Commented on JIRA ticket $CURRENT_JIRA_TICKET about merge."
+			fi
+		fi
 		;;
 	"CLOSED")
 		# Check if it was merged by looking at the merge commit
@@ -109,6 +138,20 @@ check_pr_status() {
 			output "PR #${pr_number} was merged."
 			debug_log "PR #${pr_number} was merged (closed state)"
 			SHOULD_DELETE_LOCAL_BRANCH="$current_branch"
+
+			# Comment on JIRA ticket that PR was merged
+			if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+				debug_log "Commenting on JIRA ticket about merge"
+				local merge_comment="Pull request merged.
+
+**PR:** #${pr_number}
+
+---
+_Automated comment from agent-fork-join_"
+				if jira_add_comment "$CURRENT_JIRA_TICKET" "$merge_comment" 2>/dev/null; then
+					output "Commented on JIRA ticket $CURRENT_JIRA_TICKET about merge."
+				fi
+			fi
 		else
 			output "PR #${pr_number} is closed (not merged)."
 			debug_log "PR #${pr_number} is closed without merge"
@@ -250,6 +293,43 @@ cleanup_session() {
 	fi
 }
 
+# Clean up JIRA ticket tracking
+cleanup_jira_ticket() {
+	if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
+		# Clear the current-ticket symlink
+		jira_clear_current_ticket 2>/dev/null || true
+		debug_log "Cleared JIRA current-ticket symlink"
+	fi
+}
+
+# Ask user about JIRA ticket status change
+# This outputs instructions for the Claude agent to ask the user
+# Returns: status to set, or empty if no change
+ask_jira_status_change() {
+	if [[ -z "$CURRENT_JIRA_TICKET" ]]; then
+		return 0
+	fi
+
+	output ""
+	output "=== JIRA Ticket Status ==="
+	output ""
+	output "Current JIRA ticket: $CURRENT_JIRA_TICKET"
+	if [[ -n "$JIRA_TICKET_URL" ]]; then
+		output "URL: $JIRA_TICKET_URL"
+	fi
+	output ""
+	output "JIRA_TICKET_STATUS_QUESTION=true"
+	output "JIRA_TICKET_ID=$CURRENT_JIRA_TICKET"
+	output ""
+	output "The Claude agent should use AskUserQuestion to ask:"
+	output "  Question: 'Would you like to update the JIRA ticket status?'"
+	output "  Options:"
+	output "    - 'Done' - Mark the ticket as done"
+	output "    - 'In Review' - Mark as in review"
+	output "    - 'No change' - Leave status unchanged"
+	output ""
+}
+
 # Main function
 main() {
 	debug_log "=== /done command started ==="
@@ -259,6 +339,9 @@ main() {
 		output "Error: Not in a git repository"
 		exit 1
 	fi
+
+	# Get JIRA ticket info early
+	get_jira_ticket
 
 	local current_branch
 	current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -273,11 +356,17 @@ main() {
 	output ""
 
 	# Step 1: Check PR status (sets SHOULD_DELETE_LOCAL_BRANCH if PR was merged)
+	# This also comments on JIRA if PR was merged
 	check_pr_status "$current_branch"
 
 	output ""
 
-	# Step 2: Switch to default branch
+	# Step 2: Ask about JIRA ticket status (if we have a ticket and PR was merged)
+	if [[ -n "$CURRENT_JIRA_TICKET" && -n "$SHOULD_DELETE_LOCAL_BRANCH" ]]; then
+		ask_jira_status_change
+	fi
+
+	# Step 3: Switch to default branch
 	if ! switch_to_default_branch "$default_branch"; then
 		output ""
 		output "Failed to switch to $default_branch. Please check your git state."
@@ -286,7 +375,7 @@ main() {
 
 	output ""
 
-	# Step 3: Pull latest changes
+	# Step 4: Pull latest changes
 	if ! pull_latest "$default_branch"; then
 		output ""
 		output "Pull failed. Please resolve any conflicts manually."
@@ -295,14 +384,19 @@ main() {
 
 	output ""
 
-	# Step 4: Delete local feature branch if marked for deletion
+	# Step 5: Delete local feature branch if marked for deletion
 	if [[ -n "$SHOULD_DELETE_LOCAL_BRANCH" ]]; then
 		delete_local_branch "$SHOULD_DELETE_LOCAL_BRANCH" "$default_branch"
 		output ""
 	fi
 
-	# Step 5: Clean up session state
+	# Step 6: Clean up session state
 	cleanup_session
+
+	# Step 7: Clean up JIRA ticket tracking (if PR was merged)
+	if [[ -n "$SHOULD_DELETE_LOCAL_BRANCH" ]]; then
+		cleanup_jira_ticket
+	fi
 
 	output ""
 	output "=== Workflow Complete ==="

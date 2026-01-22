@@ -32,10 +32,15 @@ The plugin will NOT activate for:
 
 1. Commits ALL tracked changes in a **single commit**
 2. Uses AI to generate Angular-style commit message
-3. Pushes changes to remote
-4. Creates a PR with:
+3. **If JIRA ticket is tracked** (`.jira/current-ticket` exists):
+   - Prepends ticket ID to commit message (e.g., `PGF-123: feat: add feature`)
+   - Enables JIRA Smart Commits
+4. Pushes changes to remote
+5. Creates a PR with:
    - AI-generated summary
    - Complete original prompt in metadata
+   - **JIRA ticket link** (if tracked)
+6. **Comments on JIRA ticket** with PR summary and link (if tracked)
 
 ## Angular Commit Types
 
@@ -57,17 +62,43 @@ The plugin will NOT activate for:
 Use `/done` when your PR has been merged and you want to clean up locally:
 
 1. **Check PR status** (was it merged?)
-2. **Switch to main branch**
-3. **Pull latest changes**
-4. **Delete local feature branch** (if PR was merged)
-5. **Resolve conflicts** (automatically if possible)
-6. **Run /compact** to consolidate conversation history
+2. **Comment on JIRA** - "PR merged" (if JIRA ticket tracked)
+3. **Ask about JIRA status** - Use AskUserQuestion to ask if ticket status should change:
+   - Options: "Done", "In Review", "No change"
+   - Update status via beads if requested
+4. **Switch to main branch**
+5. **Pull latest changes**
+6. **Delete local feature branch** (if PR was merged)
+7. **Clean up JIRA tracking** - Remove `.jira/current-ticket` symlink
+8. **Run /compact** to consolidate conversation history
 
 ```
 /done
 ```
 
 **Note:** This command does NOT merge PRs remotely. Merge your PR on GitHub first, then run `/done` to clean up your local environment.
+
+## JIRA Integration
+
+When `.jira/current-ticket` exists (set by `/jira:work`), this plugin automatically:
+
+### On Commit
+
+- Prepends JIRA ticket ID to commit message
+- Format: `PGF-123: feat(scope): description`
+- Enables JIRA Smart Commits for automatic linking
+
+### On PR Creation
+
+- Includes JIRA ticket in PR title
+- Adds JIRA ticket link in PR description
+- Comments on JIRA ticket with PR summary and link
+
+### On /done (when PR merged)
+
+- Comments "PR merged" on JIRA ticket
+- Asks user about updating ticket status (Done, In Review, etc.)
+- Cleans up `.jira/current-ticket` symlink
 
 ## PR Prompt History
 
