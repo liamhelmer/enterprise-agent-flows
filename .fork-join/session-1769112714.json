@@ -1,11 +1,17 @@
 {
-    "session_id": "session-1769112714",
-    "feature_branch": "feat/jira-ticket-argument-caching",
-    "base_branch": "main",
-    "prompt": "Add the ability to specify a ticket as an argument to /work which automatically sets that ticket as the jira ticket. If a ticket is not set to in progress, then set it to in progress when the user sends a prompt with that ticket set. Store the user's email, the jira url , etc in a file in .jira for the hook to use so that it doesn't have to look it up all the time: we want to make interactions with jira as quick as possible, using beads to sync the tickets locally, and caching any data we need in .jira. never store the jira token in beads or in a configuration file\n",
-    "state": "STARTED",
-    "started_at": "2026-01-22T20:11:54Z",
-    "agents": [],
-    "merged_count": 0,
-    "conflict_count": 0
+  "session_id": "session-1769112714",
+  "feature_branch": "feat/jira-ticket-argument-caching",
+  "base_branch": "main",
+  "prompt": "Add the ability to specify a ticket as an argument to /work which automatically sets that ticket as the jira ticket. If a ticket is not set to in progress, then set it to in progress when the user sends a prompt with that ticket set. Store the user's email, the jira url , etc in a file in .jira for the hook to use so that it doesn't have to look it up all the time: we want to make interactions with jira as quick as possible, using beads to sync the tickets locally, and caching any data we need in .jira. never store the jira token in beads or in a configuration file\n",
+  "state": "STARTED",
+  "started_at": "2026-01-22T20:11:54Z",
+  "agents": [],
+  "merged_count": 0,
+  "conflict_count": 0,
+  "prompts": [
+    {
+      "prompt": "after selecting a jira ticket with /work and setting the beads ticket the user is working on, if the current branch is main, offer to create a new branch with a name based on the contents of the jira ticket. Allow the user to edit the branch name, or cancel the branch creation",
+      "timestamp": "2026-01-22 20:17:29 UTC"
+    }
+  ]
 }
