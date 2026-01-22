@@ -1,2 +1,0 @@
-/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/commands/work.md
-/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/CLAUDE.md
