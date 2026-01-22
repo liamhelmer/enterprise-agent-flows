@@ -1,0 +1,11 @@
+{
+    "session_id": "session-1769109247",
+    "feature_branch": "feat/setup",
+    "base_branch": "main",
+    "prompt": "/setup \n",
+    "state": "STARTED",
+    "started_at": "2026-01-22T19:14:07Z",
+    "agents": [],
+    "merged_count": 0,
+    "conflict_count": 0
+}
