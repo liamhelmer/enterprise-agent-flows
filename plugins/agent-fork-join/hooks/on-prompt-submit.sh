@@ -502,6 +502,36 @@ main() {
 	fi
 	debug_log "Confirmed: in a git repository"
 
+	# Check if current JIRA ticket is marked as done - if so, clean up and prompt for next ticket
+	local current_ticket=""
+	if current_ticket=$(jira_get_current_ticket 2>/dev/null); then
+		debug_log "Found current JIRA ticket: $current_ticket"
+
+		# Sync with JIRA to get latest status
+		bd jira sync --pull 2>/dev/null || true
+
+		if jira_is_ticket_done "$current_ticket"; then
+			debug_log "Current ticket $current_ticket is done, cleaning up"
+			log_info "Current JIRA ticket $current_ticket is marked as done"
+
+			# Clean up the current-ticket symlink
+			jira_clear_current_ticket
+
+			# Signal to Claude to run /jira:work
+			echo ""
+			echo "=== JIRA Ticket Completed ==="
+			echo ""
+			echo "The current JIRA ticket ($current_ticket) has been marked as Done."
+			echo "The ticket tracking has been cleared."
+			echo ""
+			echo "JIRA_TICKET_DONE=true"
+			echo "JIRA_COMPLETED_TICKET=$current_ticket"
+			echo ""
+			echo "The Claude agent should now run /jira:work to select the next ticket."
+			echo ""
+		fi
+	fi
+
 	# Check if this is a GitHub repository and we're on an appropriate branch
 	if ! git_should_plugin_activate; then
 		debug_log "Plugin should not activate (not GitHub repo or not on default/plugin branch)"

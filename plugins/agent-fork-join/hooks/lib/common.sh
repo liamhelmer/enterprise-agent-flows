@@ -217,6 +217,37 @@ jira_update_status() {
 	}
 }
 
+# Check if JIRA ticket status is "done" (or similar closed status)
+# Usage: jira_is_ticket_done "PGF-123"
+# Returns: 0 if ticket is done, 1 otherwise
+jira_is_ticket_done() {
+	local ticket_id="$1"
+
+	if ! command -v bd >/dev/null 2>&1; then
+		log_debug "beads CLI not available, cannot check JIRA status"
+		return 1
+	fi
+
+	# Get the ticket status from beads
+	local status
+	status=$(bd list --format=json 2>/dev/null | jq -r ".[] | select(.jira_key == \"$ticket_id\") | .status" 2>/dev/null || echo "")
+
+	# Check for various "done" status values (case-insensitive)
+	local status_lower
+	status_lower=$(echo "$status" | tr '[:upper:]' '[:lower:]')
+
+	case "$status_lower" in
+	"done" | "closed" | "resolved" | "complete" | "completed")
+		log_debug "Ticket $ticket_id has done status: $status"
+		return 0
+		;;
+	*)
+		log_debug "Ticket $ticket_id status is: $status (not done)"
+		return 1
+		;;
+	esac
+}
+
 # Clean up .jira/current-ticket symlink
 jira_clear_current_ticket() {
 	local jira_dir=".jira"

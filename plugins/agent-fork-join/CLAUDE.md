@@ -16,8 +16,12 @@ The plugin will NOT activate for:
 
 ### UserPromptSubmit (on new prompt)
 
-1. Checks if prompt will make code changes (keywords: implement, add, create, fix, etc.)
-2. If on default branch AND changes expected:
+1. **Checks JIRA ticket status** (if `.jira/current-ticket` exists):
+   - Syncs with JIRA to get latest status
+   - If ticket is marked as Done/Closed/Resolved, cleans up tracking
+   - Outputs `JIRA_TICKET_DONE=true` signal for Claude to run `/jira:work`
+2. Checks if prompt will make code changes (keywords: implement, add, create, fix, etc.)
+3. If on default branch AND changes expected:
    - Creates an Angular-style feature branch (feat/, fix/, refactor/, etc.)
    - AI generates branch name based on prompt content
    - Immediately pushes branch to origin
