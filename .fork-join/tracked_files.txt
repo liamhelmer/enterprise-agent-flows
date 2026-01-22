@@ -10,3 +10,4 @@
 /Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/commands/done.md
 /Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/CLAUDE.md
 /Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/SKILL.md
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/hooks/on-prompt-submit.sh
