@@ -86,33 +86,38 @@ Use the AskUserQuestion tool to present tickets to the user.
   - "PGF-789: Update documentation"
   - "Other" (user can specify ticket ID manually)
 
-### Step 6: Set Up .jira Directory
+### Step 6: Find Beads Issue ID
 
-Create the .jira directory:
-
-```bash
-# Create .jira directory if it doesn't exist
-mkdir -p .jira
-```
-
-### Step 7: Create Ticket Tracking File
-
-Create a file for the selected ticket and symlink:
+Map the selected JIRA ticket key to its beads issue ID:
 
 ```bash
-TICKET_ID="PGF-123"  # Selected ticket
+JIRA_KEY="PGF-123"  # Selected JIRA ticket
 
-# Create ticket file with metadata
-cat > ".jira/$TICKET_ID" << EOF
-ticket_id=$TICKET_ID
-started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-summary=Implement login feature
-url=https://badal.atlassian.net/browse/$TICKET_ID
-EOF
+# Find beads issue that has this JIRA key in external_ref
+BEADS_ISSUE=$(bd list --json 2>/dev/null | jq -r ".[] | select(.external_ref | contains(\"$JIRA_KEY\")) | .id" | head -1)
 
-# Create/update symlink to current ticket
-ln -sf "$TICKET_ID" .jira/current-ticket
+if [[ -z "$BEADS_ISSUE" || "$BEADS_ISSUE" == "null" ]]; then
+    echo "Error: Could not find beads issue for JIRA ticket $JIRA_KEY"
+    echo "Try running 'bd jira sync --pull' and try again."
+    exit 1
+fi
+
+# Get issue details from beads
+ISSUE_TITLE=$(bd show "$BEADS_ISSUE" --json | jq -r '.title // empty')
+JIRA_URL=$(bd show "$BEADS_ISSUE" --json | jq -r '.external_ref // empty')
 ```
+
+### Step 7: Set Beads Current Issue
+
+Set the current beads issue for tracking (agent-fork-join uses this):
+
+```bash
+# The .beads directory should already exist (created by bd init)
+# Write the beads issue ID to current-issue file
+echo "$BEADS_ISSUE" > .beads/current-issue
+```
+
+**Note:** We use the **beads issue ID** (e.g., `bd-100`) for tracking, not the JIRA key. The beads issue contains the JIRA URL in its `external_ref` field.
 
 ### Step 8: Show Confirmation
 
@@ -121,18 +126,18 @@ Display confirmation and next steps:
 ```
 === Now Working On ===
 
-Ticket:  PGF-123
-Summary: Implement login feature
-URL:     https://badal.atlassian.net/browse/PGF-123
+Beads Issue: bd-100
+JIRA Ticket: PGF-123
+Summary:     Implement login feature
+URL:         https://badal.atlassian.net/browse/PGF-123
 
-Tracking file created: .jira/PGF-123
-Current ticket linked: .jira/current-ticket -> PGF-123
+Current issue set: .beads/current-issue -> bd-100
 
 Smart commits are now enabled. All commits will include "PGF-123" for JIRA integration.
 
 When done, run /done to:
 - Complete the PR workflow
-- Update JIRA ticket status
+- Update issue status (syncs to JIRA)
 - Clean up tracking files
 ```
 
@@ -167,8 +172,10 @@ Please verify the ticket ID and try again.
 
 ## Integration with agent-fork-join
 
-When `.jira/current-ticket` exists:
+When `.beads/current-issue` exists:
 
-1. **Commits**: Include ticket ID in commit message (e.g., "PGF-123: Add login form")
+1. **Commits**: Include JIRA ticket ID in commit message (e.g., "PGF-123: Add login form")
+   - The JIRA key is extracted from the beads issue's `external_ref` field
 2. **PRs**: Include ticket ID in PR title and link in description
 3. **Smart Commits**: JIRA will automatically link commits/PRs to the ticket
+4. **Status Updates**: Issue status changes via beads are synced to JIRA

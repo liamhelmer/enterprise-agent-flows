@@ -1,17 +1,17 @@
 ---
 name: "done"
-description: "Complete the current branch workflow: check PR status, handle JIRA ticket, switch to main, pull changes, and clean up local branch."
+description: "Complete the current branch workflow: check PR status, handle beads issue status, switch to main, pull changes, and clean up local branch."
 ---
 
 # /done Command
 
 Complete the current branch workflow by switching to main and cleaning up. This is a **local-only** operation - it does not modify the remote repository.
 
-**JIRA Integration:** If a JIRA ticket is being tracked (via `.jira/current-ticket`), this command will:
+**Beads/JIRA Integration:** If a beads issue is being tracked (via `.beads/current-issue`), this command will:
 
-- Comment "PR merged" on the JIRA ticket when the PR is merged
-- Ask the user if they want to update the JIRA ticket status
-- Clean up the `.jira/current-ticket` symlink **only if user selects "Done"**
+- Comment "PR merged" on the beads issue (syncs to JIRA if linked) when the PR is merged
+- Ask the user if they want to update the issue status
+- Clean up the `.beads/current-issue` file **only if user selects "Done"**
 
 ## When This Command Is Invoked
 
@@ -71,28 +71,48 @@ if [[ "$current_branch" =~ ^(build|ci|docs|feat|fix|perf|refactor|test)/ ]]; the
 fi
 ```
 
-### Step 3: JIRA Ticket Status (if applicable)
+### Step 3: Beads Issue Status (if applicable)
 
-If a JIRA ticket is being tracked (`.jira/current-ticket` exists) and the PR was merged:
+If a beads issue is being tracked (`.beads/current-issue` exists) and the PR was merged:
 
-1. The script will output `JIRA_TICKET_STATUS_QUESTION=true` signal
-2. Use **AskUserQuestion** to ask the user:
-   - Header: "JIRA Status"
-   - Question: "Would you like to update the JIRA ticket status?"
-   - Options:
-     - "Done" - Mark the ticket as done (clears current-ticket tracking)
-     - "In Review" - Mark as in review (keeps current-ticket tracking)
-     - "No change" - Leave status unchanged (keeps current-ticket tracking)
-
-3. If user selects a status change, update via beads:
+1. First, get the current beads issue and linked JIRA key:
 
    ```bash
-   bd update "$JIRA_TICKET_ID" --status="done"
+   # Read the beads issue ID
+   beads_issue=$(cat .beads/current-issue 2>/dev/null | tr -d '[:space:]')
+
+   # Get linked JIRA key if available
+   jira_key=$(bd show "$beads_issue" --json 2>/dev/null | jq -r '.external_ref // empty' | sed 's|.*/browse/||')
    ```
 
-4. **Only if user selects "Done"**, clean up the JIRA tracking:
+2. Comment on the issue that the PR was merged:
+
    ```bash
-   rm -f .jira/current-ticket
+   bd comments add "$beads_issue" --body "PR #$pr_number merged into $default_branch"
+   ```
+
+3. The script will output `BEADS_ISSUE_STATUS_QUESTION=true` signal
+4. Use **AskUserQuestion** to ask the user:
+   - Header: "Issue Status"
+   - Question: "Would you like to update the issue status?"
+   - Options:
+     - "Done" - Mark the issue as closed (clears current-issue tracking)
+     - "In Review" - Mark as in_progress (keeps current-issue tracking)
+     - "No change" - Leave status unchanged (keeps current-issue tracking)
+
+5. If user selects a status change, update via beads:
+
+   ```bash
+   # For "Done"
+   bd update "$beads_issue" --status="closed"
+
+   # For "In Review"
+   bd update "$beads_issue" --status="in_progress"
+   ```
+
+6. **Only if user selects "Done"**, clean up the beads tracking:
+   ```bash
+   rm -f .beads/current-issue
    ```
 
 ### Step 4: Switch to Main Branch
@@ -138,7 +158,7 @@ fi
 rm -f .fork-join/current_session
 rm -f .fork-join/tracked_files.txt
 
-# Note: .jira/current-ticket is only removed if user selected "Done" in Step 3
+# Note: .beads/current-issue is only removed if user selected "Done" in Step 3
 ```
 
 ### Step 8: Run Compact

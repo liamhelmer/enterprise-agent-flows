@@ -1,0 +1,3 @@
+ticket_id=PGF-206
+started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+url=https://badal.atlassian.net/browse/PGF-206

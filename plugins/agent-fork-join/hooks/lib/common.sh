@@ -93,51 +93,46 @@ setup_cleanup_trap() {
 }
 
 # ==========================================
-# JIRA Integration Functions
+# Beads Issue Tracking Functions
 # ==========================================
 
-# Get current JIRA ticket ID from .jira/current-ticket symlink
-# Returns: ticket ID (e.g., "PGF-123") or empty string if not set
-jira_get_current_ticket() {
-	local jira_dir=".jira"
-	local current_ticket_link="${jira_dir}/current-ticket"
+# Get current beads issue ID from .beads/current-issue
+# Returns: beads ID (e.g., "bd-100") or empty string if not set
+beads_get_current_issue() {
+	local beads_dir=".beads"
+	local current_issue_file="${beads_dir}/current-issue"
 
-	if [[ ! -L "$current_ticket_link" && ! -f "$current_ticket_link" ]]; then
+	if [[ ! -f "$current_issue_file" ]]; then
 		return 1
 	fi
 
-	# Get the ticket ID (filename the symlink points to)
-	local ticket_id
-	if [[ -L "$current_ticket_link" ]]; then
-		ticket_id=$(readlink "$current_ticket_link" | xargs basename)
-	else
-		ticket_id=$(cat "$current_ticket_link" 2>/dev/null | grep "^ticket_id=" | cut -d= -f2)
-	fi
+	local issue_id
+	issue_id=$(cat "$current_issue_file" 2>/dev/null | tr -d '[:space:]')
 
-	if [[ -n "$ticket_id" ]]; then
-		echo "$ticket_id"
+	if [[ -n "$issue_id" ]]; then
+		echo "$issue_id"
 		return 0
 	fi
 
 	return 1
 }
 
-# Get JIRA ticket metadata
-# Usage: jira_get_ticket_field "PGF-123" "summary"
-# Available fields: ticket_id, started_at, summary, url
-jira_get_ticket_field() {
-	local ticket_id="$1"
+# Get beads issue field
+# Usage: beads_get_issue_field "bd-100" "title"
+# Available fields: id, title, status, priority, external_ref, assignee, jira_key
+beads_get_issue_field() {
+	local issue_id="$1"
 	local field="$2"
-	local jira_dir=".jira"
-	local ticket_file="${jira_dir}/${ticket_id}"
 
-	if [[ ! -f "$ticket_file" ]]; then
+	if ! command -v bd >/dev/null 2>&1; then
 		return 1
 	fi
 
+	# Use bd show with JSON output
 	local value
-	value=$(grep "^${field}=" "$ticket_file" 2>/dev/null | cut -d= -f2-)
-	if [[ -n "$value" ]]; then
+	value=$(bd show "$issue_id" --json 2>/dev/null | jq -r ".$field // empty" 2>/dev/null)
+
+	if [[ -n "$value" && "$value" != "null" ]]; then
 		echo "$value"
 		return 0
 	fi
@@ -145,7 +140,39 @@ jira_get_ticket_field() {
 	return 1
 }
 
-# Get JIRA URL from beads config
+# Get JIRA key for a beads issue (from external_ref URL)
+# Usage: beads_get_jira_key "bd-100"
+# Returns: JIRA key (e.g., "PGF-123") or empty string
+beads_get_jira_key() {
+	local issue_id="$1"
+
+	if ! command -v bd >/dev/null 2>&1; then
+		return 1
+	fi
+
+	# Get external_ref which contains JIRA URL like https://badal.atlassian.net/browse/PGF-123
+	local external_ref
+	external_ref=$(beads_get_issue_field "$issue_id" "external_ref")
+
+	if [[ -n "$external_ref" && "$external_ref" == *"/browse/"* ]]; then
+		# Extract JIRA key from URL
+		local jira_key
+		jira_key=$(echo "$external_ref" | sed 's|.*/browse/||')
+		echo "$jira_key"
+		return 0
+	fi
+
+	return 1
+}
+
+# Get JIRA URL for a beads issue
+# Usage: beads_get_jira_url "bd-100"
+beads_get_jira_url() {
+	local issue_id="$1"
+	beads_get_issue_field "$issue_id" "external_ref"
+}
+
+# Get JIRA URL base from beads config
 jira_get_url() {
 	if command -v bd >/dev/null 2>&1; then
 		bd config get jira.url 2>/dev/null || echo ""
@@ -163,100 +190,207 @@ jira_get_project() {
 	fi
 }
 
-# Add a comment to a JIRA issue via beads
-# Usage: jira_add_comment "PGF-123" "Comment text"
-jira_add_comment() {
-	local ticket_id="$1"
+# Add a comment to a beads issue (syncs to JIRA)
+# Usage: beads_add_comment "bd-100" "Comment text"
+beads_add_comment() {
+	local issue_id="$1"
 	local comment="$2"
 
 	if ! command -v bd >/dev/null 2>&1; then
-		log_debug "beads CLI not available, cannot add JIRA comment"
+		log_debug "beads CLI not available, cannot add comment"
 		return 1
 	fi
 
-	# Use beads to add comment
-	# Note: bd comments add expects the beads issue ID format
-	# We need to find the local beads issue that corresponds to this JIRA ticket
-	local beads_id
-	beads_id=$(bd list --format=json 2>/dev/null | jq -r ".[] | select(.jira_key == \"$ticket_id\") | .id" 2>/dev/null || echo "")
-
-	if [[ -n "$beads_id" ]]; then
-		bd comments add "$beads_id" --body "$comment" 2>/dev/null && return 0
-	fi
-
-	# Fallback: try using the ticket ID directly if beads supports it
-	bd comments add "$ticket_id" --body "$comment" 2>/dev/null || {
-		log_debug "Could not add comment to JIRA ticket $ticket_id via beads"
+	bd comments add "$issue_id" --body "$comment" 2>/dev/null || {
+		log_debug "Could not add comment to beads issue $issue_id"
 		return 1
 	}
 }
 
-# Update JIRA issue status via beads
-# Usage: jira_update_status "PGF-123" "done"
-jira_update_status() {
-	local ticket_id="$1"
+# Update beads issue status
+# Usage: beads_update_status "bd-100" "closed"
+# Valid statuses: open, in_progress, blocked, deferred, closed
+beads_update_status() {
+	local issue_id="$1"
 	local status="$2"
 
 	if ! command -v bd >/dev/null 2>&1; then
-		log_debug "beads CLI not available, cannot update JIRA status"
+		log_debug "beads CLI not available, cannot update status"
 		return 1
 	fi
 
-	# Find beads issue ID
-	local beads_id
-	beads_id=$(bd list --format=json 2>/dev/null | jq -r ".[] | select(.jira_key == \"$ticket_id\") | .id" 2>/dev/null || echo "")
-
-	if [[ -n "$beads_id" ]]; then
-		bd update "$beads_id" --status="$status" 2>/dev/null && return 0
-	fi
-
-	# Fallback: try using the ticket ID directly
-	bd update "$ticket_id" --status="$status" 2>/dev/null || {
-		log_debug "Could not update JIRA ticket $ticket_id status via beads"
+	bd update "$issue_id" --status="$status" 2>/dev/null || {
+		log_debug "Could not update beads issue $issue_id status"
 		return 1
 	}
 }
 
-# Check if JIRA ticket status is "done" (or similar closed status)
-# Usage: jira_is_ticket_done "PGF-123"
-# Returns: 0 if ticket is done, 1 otherwise
-jira_is_ticket_done() {
-	local ticket_id="$1"
+# Check if beads issue is closed
+# Usage: beads_is_issue_closed "bd-100"
+# Returns: 0 if closed, 1 otherwise
+beads_is_issue_closed() {
+	local issue_id="$1"
 
 	if ! command -v bd >/dev/null 2>&1; then
-		log_debug "beads CLI not available, cannot check JIRA status"
+		log_debug "beads CLI not available, cannot check status"
 		return 1
 	fi
 
-	# Get the ticket status from beads
 	local status
-	status=$(bd list --format=json 2>/dev/null | jq -r ".[] | select(.jira_key == \"$ticket_id\") | .status" 2>/dev/null || echo "")
+	status=$(beads_get_issue_field "$issue_id" "status")
 
-	# Check for various "done" status values (case-insensitive)
-	local status_lower
-	status_lower=$(echo "$status" | tr '[:upper:]' '[:lower:]')
-
-	case "$status_lower" in
-	"done" | "closed" | "resolved" | "complete" | "completed")
-		log_debug "Ticket $ticket_id has done status: $status"
+	case "$status" in
+	"closed")
+		log_debug "Issue $issue_id is closed"
 		return 0
 		;;
 	*)
-		log_debug "Ticket $ticket_id status is: $status (not done)"
+		log_debug "Issue $issue_id status is: $status (not closed)"
 		return 1
 		;;
 	esac
 }
 
-# Clean up .jira/current-ticket symlink
-jira_clear_current_ticket() {
-	local jira_dir=".jira"
-	local current_ticket_link="${jira_dir}/current-ticket"
+# Set current beads issue
+# Usage: beads_set_current_issue "bd-100"
+beads_set_current_issue() {
+	local issue_id="$1"
+	local beads_dir=".beads"
 
-	if [[ -L "$current_ticket_link" || -f "$current_ticket_link" ]]; then
-		rm -f "$current_ticket_link"
-		log_debug "Cleared current JIRA ticket"
+	# Verify the issue exists
+	if ! bd show "$issue_id" >/dev/null 2>&1; then
+		log_debug "Issue $issue_id not found in beads"
+		return 1
 	fi
+
+	# Create .beads directory if it doesn't exist (should already exist)
+	mkdir -p "$beads_dir"
+
+	# Write the issue ID to current-issue file
+	echo "$issue_id" >"${beads_dir}/current-issue"
+	log_debug "Set current issue to $issue_id"
+	return 0
+}
+
+# Clear current beads issue
+beads_clear_current_issue() {
+	local beads_dir=".beads"
+	local current_issue_file="${beads_dir}/current-issue"
+
+	if [[ -f "$current_issue_file" ]]; then
+		rm -f "$current_issue_file"
+		log_debug "Cleared current beads issue"
+	fi
+}
+
+# Map JIRA status to beads status
+# Usage: map_jira_to_beads_status "In Progress"
+# Returns: beads status (open, in_progress, blocked, deferred, closed)
+map_jira_to_beads_status() {
+	local jira_status="$1"
+	local status_lower
+	status_lower=$(echo "$jira_status" | tr '[:upper:]' '[:lower:]')
+
+	case "$status_lower" in
+	"to do" | "todo" | "open" | "backlog" | "new")
+		echo "open"
+		;;
+	"in progress" | "in development" | "in review" | "review")
+		echo "in_progress"
+		;;
+	"blocked" | "on hold")
+		echo "blocked"
+		;;
+	"deferred" | "postponed" | "later")
+		echo "deferred"
+		;;
+	"done" | "closed" | "resolved" | "complete" | "completed" | "won't do" | "won't fix")
+		echo "closed"
+		;;
+	*)
+		echo "open"
+		;;
+	esac
+}
+
+# Map beads status to JIRA status
+# Usage: map_beads_to_jira_status "in_progress"
+# Returns: JIRA-friendly status name
+map_beads_to_jira_status() {
+	local beads_status="$1"
+
+	case "$beads_status" in
+	"open")
+		echo "To Do"
+		;;
+	"in_progress")
+		echo "In Progress"
+		;;
+	"blocked")
+		echo "Blocked"
+		;;
+	"deferred")
+		echo "Deferred"
+		;;
+	"closed")
+		echo "Done"
+		;;
+	*)
+		echo "To Do"
+		;;
+	esac
+}
+
+# Find beads issue by JIRA key
+# Usage: beads_find_by_jira_key "PGF-123"
+# Returns: beads ID (e.g., "bd-100") or empty string
+beads_find_by_jira_key() {
+	local jira_key="$1"
+
+	if ! command -v bd >/dev/null 2>&1; then
+		return 1
+	fi
+
+	# Search for issue with matching external_ref containing the JIRA key
+	local beads_id
+	beads_id=$(bd list --json 2>/dev/null | jq -r ".[] | select(.external_ref | contains(\"$jira_key\")) | .id" 2>/dev/null | head -1)
+
+	if [[ -n "$beads_id" && "$beads_id" != "null" ]]; then
+		echo "$beads_id"
+		return 0
+	fi
+
+	return 1
+}
+
+# ==========================================
+# Legacy JIRA functions (for backwards compatibility)
+# These map to the new beads functions
+# ==========================================
+
+# Get current JIRA ticket - now uses beads
+jira_get_current_ticket() {
+	local issue_id
+	if issue_id=$(beads_get_current_issue); then
+		beads_get_jira_key "$issue_id"
+	else
+		return 1
+	fi
+}
+
+# Check if JIRA ticket is done - now uses beads
+jira_is_ticket_done() {
+	local issue_id
+	if issue_id=$(beads_get_current_issue); then
+		beads_is_issue_closed "$issue_id"
+	else
+		return 1
+	fi
+}
+
+# Clear current ticket - now uses beads
+jira_clear_current_ticket() {
+	beads_clear_current_issue
 }
 
 # ==========================================

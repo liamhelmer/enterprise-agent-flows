@@ -49,13 +49,15 @@ fi
 # Valid Angular commit types
 VALID_TYPES=("build" "ci" "docs" "feat" "fix" "perf" "refactor" "test")
 
-# Get current JIRA ticket if available
+# Get current beads issue if available
+CURRENT_BEADS_ISSUE=""
 CURRENT_JIRA_TICKET=""
 JIRA_TICKET_URL=""
-if current_ticket=$(jira_get_current_ticket 2>/dev/null); then
-	CURRENT_JIRA_TICKET="$current_ticket"
-	JIRA_TICKET_URL=$(jira_get_ticket_field "$current_ticket" "url" 2>/dev/null || echo "")
-	debug_log "JIRA ticket detected: $CURRENT_JIRA_TICKET"
+if current_issue=$(beads_get_current_issue 2>/dev/null); then
+	CURRENT_BEADS_ISSUE="$current_issue"
+	CURRENT_JIRA_TICKET=$(beads_get_jira_key "$current_issue" 2>/dev/null || echo "")
+	JIRA_TICKET_URL=$(beads_get_jira_url "$current_issue" 2>/dev/null || echo "")
+	debug_log "Beads issue detected: $CURRENT_BEADS_ISSUE (JIRA: $CURRENT_JIRA_TICKET)"
 fi
 
 # Generate a plain English summary of the task and work done using AI
@@ -511,9 +513,9 @@ ${session_prompt:-No prompt recorded}
 		debug_log "PR created successfully"
 		echo "Pull request created for branch $current_branch"
 
-		# Comment on JIRA ticket about the PR (if ticket is set)
-		if [[ -n "$CURRENT_JIRA_TICKET" ]]; then
-			debug_log "Commenting on JIRA ticket $CURRENT_JIRA_TICKET about PR"
+		# Comment on beads issue about the PR (if issue is set)
+		if [[ -n "$CURRENT_BEADS_ISSUE" ]]; then
+			debug_log "Commenting on beads issue $CURRENT_BEADS_ISSUE about PR"
 
 			# Extract PR URL from output or construct it
 			local actual_pr_url
@@ -523,12 +525,14 @@ ${session_prompt:-No prompt recorded}
 				actual_pr_url=$(gh pr view --json url --jq '.url' 2>/dev/null || echo "")
 			fi
 
-			# Build a summary for JIRA comment
-			local jira_comment="Pull request created for this ticket:
+			# Build a summary for beads comment
+			local beads_comment="Pull request created for this issue:
 
 **PR Title:** ${pr_title}
 
 **PR URL:** ${actual_pr_url:-PR URL not available}
+
+**JIRA Ticket:** ${CURRENT_JIRA_TICKET:-N/A}
 
 **Summary:**
 $(echo "$pr_body" | head -20 | sed 's/^/> /')
@@ -537,11 +541,11 @@ $(echo "$pr_body" | head -20 | sed 's/^/> /')
 _Automated comment from agent-fork-join_"
 
 			# Add comment via beads
-			if jira_add_comment "$CURRENT_JIRA_TICKET" "$jira_comment" 2>/dev/null; then
-				debug_log "Successfully commented on JIRA ticket"
-				echo "Commented on JIRA ticket $CURRENT_JIRA_TICKET"
+			if beads_add_comment "$CURRENT_BEADS_ISSUE" "$beads_comment" 2>/dev/null; then
+				debug_log "Successfully commented on beads issue"
+				echo "Commented on beads issue $CURRENT_BEADS_ISSUE (JIRA: $CURRENT_JIRA_TICKET)"
 			else
-				debug_log "Failed to comment on JIRA ticket (beads may not support this)"
+				debug_log "Failed to comment on beads issue"
 			fi
 		fi
 	else

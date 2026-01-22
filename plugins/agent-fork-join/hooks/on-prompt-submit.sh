@@ -502,30 +502,35 @@ main() {
 	fi
 	debug_log "Confirmed: in a git repository"
 
-	# Check if current JIRA ticket is marked as done - if so, clean up and prompt for next ticket
-	local current_ticket=""
-	if current_ticket=$(jira_get_current_ticket 2>/dev/null); then
-		debug_log "Found current JIRA ticket: $current_ticket"
+	# Check if current beads issue is closed - if so, clean up and prompt for next ticket
+	local current_issue=""
+	if current_issue=$(beads_get_current_issue 2>/dev/null); then
+		debug_log "Found current beads issue: $current_issue"
 
 		# Sync with JIRA to get latest status
 		bd jira sync --pull 2>/dev/null || true
 
-		if jira_is_ticket_done "$current_ticket"; then
-			debug_log "Current ticket $current_ticket is done, cleaning up"
-			log_info "Current JIRA ticket $current_ticket is marked as done"
+		if beads_is_issue_closed "$current_issue"; then
+			# Get JIRA key for display
+			local jira_key
+			jira_key=$(beads_get_jira_key "$current_issue" 2>/dev/null || echo "$current_issue")
 
-			# Clean up the current-ticket symlink
-			jira_clear_current_ticket
+			debug_log "Current issue $current_issue is closed, cleaning up"
+			log_info "Current beads issue $current_issue ($jira_key) is closed"
+
+			# Clean up the current-issue file
+			beads_clear_current_issue
 
 			# Signal to Claude to run /jira:work
 			echo ""
-			echo "=== JIRA Ticket Completed ==="
+			echo "=== Issue Completed ==="
 			echo ""
-			echo "The current JIRA ticket ($current_ticket) has been marked as Done."
-			echo "The ticket tracking has been cleared."
+			echo "The current issue ($current_issue / $jira_key) has been closed."
+			echo "The issue tracking has been cleared."
 			echo ""
-			echo "JIRA_TICKET_DONE=true"
-			echo "JIRA_COMPLETED_TICKET=$current_ticket"
+			echo "BEADS_ISSUE_CLOSED=true"
+			echo "BEADS_COMPLETED_ISSUE=$current_issue"
+			echo "JIRA_COMPLETED_TICKET=$jira_key"
 			echo ""
 			echo "The Claude agent should now run /jira:work to select the next ticket."
 			echo ""

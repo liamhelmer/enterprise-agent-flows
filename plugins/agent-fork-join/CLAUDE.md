@@ -16,10 +16,10 @@ The plugin will NOT activate for:
 
 ### UserPromptSubmit (on new prompt)
 
-1. **Checks JIRA ticket status** (if `.jira/current-ticket` exists):
-   - Syncs with JIRA to get latest status
-   - If ticket is marked as Done/Closed/Resolved, cleans up tracking
-   - Outputs `JIRA_TICKET_DONE=true` signal for Claude to run `/jira:work`
+1. **Checks beads issue status** (if `.beads/current-issue` exists):
+   - Syncs with JIRA via beads to get latest status
+   - If issue is closed, cleans up tracking
+   - Outputs `BEADS_ISSUE_CLOSED=true` signal for Claude to run `/jira:work`
 2. Checks if prompt will make code changes (keywords: implement, add, create, fix, etc.)
 3. If on default branch AND changes expected:
    - Creates an Angular-style feature branch (feat/, fix/, refactor/, etc.)
@@ -36,15 +36,16 @@ The plugin will NOT activate for:
 
 1. Commits ALL tracked changes in a **single commit**
 2. Uses AI to generate Angular-style commit message
-3. **If JIRA ticket is tracked** (`.jira/current-ticket` exists):
-   - Prepends ticket ID to commit message (e.g., `PGF-123: feat: add feature`)
+3. **If beads issue is tracked** (`.beads/current-issue` exists):
+   - Extracts JIRA key from beads issue's `external_ref` field
+   - Prepends JIRA ticket ID to commit message (e.g., `PGF-123: feat: add feature`)
    - Enables JIRA Smart Commits
 4. Pushes changes to remote
 5. Creates a PR with:
    - AI-generated summary
    - Complete original prompt in metadata
    - **JIRA ticket link** (if tracked)
-6. **Comments on JIRA ticket** with PR summary and link (if tracked)
+6. **Comments on beads issue** with PR summary and link (syncs to JIRA)
 
 ## Angular Commit Types
 
@@ -66,14 +67,14 @@ The plugin will NOT activate for:
 Use `/done` when your PR has been merged and you want to clean up locally:
 
 1. **Check PR status** (was it merged?)
-2. **Comment on JIRA** - "PR merged" (if JIRA ticket tracked)
-3. **Ask about JIRA status** - Use AskUserQuestion to ask if ticket status should change:
+2. **Comment on beads issue** - "PR merged" (syncs to JIRA if linked)
+3. **Ask about issue status** - Use AskUserQuestion to ask if status should change:
    - Options: "Done", "In Review", "No change"
-   - Update status via beads if requested
+   - Update status via beads (syncs to JIRA)
 4. **Switch to main branch**
 5. **Pull latest changes**
 6. **Delete local feature branch** (if PR was merged)
-7. **Clean up JIRA tracking** - Remove `.jira/current-ticket` symlink (only if user selects "Done")
+7. **Clean up tracking** - Remove `.beads/current-issue` (only if user selects "Done")
 8. **Run /compact** to consolidate conversation history
 
 ```
@@ -82,12 +83,13 @@ Use `/done` when your PR has been merged and you want to clean up locally:
 
 **Note:** This command does NOT merge PRs remotely. Merge your PR on GitHub first, then run `/done` to clean up your local environment.
 
-## JIRA Integration
+## Beads/JIRA Integration
 
-When `.jira/current-ticket` exists (set by `/jira:work`), this plugin automatically:
+When `.beads/current-issue` exists (set by `/jira:work`), this plugin automatically:
 
 ### On Commit
 
+- Extracts JIRA key from beads issue's `external_ref` field
 - Prepends JIRA ticket ID to commit message
 - Format: `PGF-123: feat(scope): description`
 - Enables JIRA Smart Commits for automatic linking
@@ -96,13 +98,14 @@ When `.jira/current-ticket` exists (set by `/jira:work`), this plugin automatica
 
 - Includes JIRA ticket in PR title
 - Adds JIRA ticket link in PR description
-- Comments on JIRA ticket with PR summary and link
+- Comments on beads issue (syncs to JIRA)
 
 ### On /done (when PR merged)
 
-- Comments "PR merged" on JIRA ticket
-- Asks user about updating ticket status (Done, In Review, etc.)
-- Cleans up `.jira/current-ticket` symlink only if user selects "Done"
+- Comments "PR merged" on beads issue (syncs to JIRA)
+- Asks user about updating issue status (Done, In Review, etc.)
+- Status changes sync to JIRA via beads
+- Cleans up `.beads/current-issue` only if user selects "Done"
 
 ## PR Prompt History
 
