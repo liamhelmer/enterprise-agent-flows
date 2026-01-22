@@ -110,7 +110,13 @@ If a beads issue is being tracked (`.beads/current-issue` exists) and the PR was
    bd update "$beads_issue" --status="in_progress"
    ```
 
-6. **Only if user selects "Done"**, clean up the beads tracking:
+6. **Sync changes to JIRA** (after commenting or updating status):
+
+   ```bash
+   bd jira sync --push
+   ```
+
+7. **Only if user selects "Done"**, clean up the beads tracking:
    ```bash
    rm -f .beads/current-issue
    ```

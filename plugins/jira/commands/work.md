@@ -94,7 +94,8 @@ Map the selected JIRA ticket key to its beads issue ID:
 JIRA_KEY="PGF-123"  # Selected JIRA ticket
 
 # Find beads issue that has this JIRA key in external_ref
-BEADS_ISSUE=$(bd list --json 2>/dev/null | jq -r ".[] | select(.external_ref | contains(\"$JIRA_KEY\")) | .id" | head -1)
+# Uses jq --arg for safe variable injection and 'first' to stop at first match
+BEADS_ISSUE=$(bd list --json 2>/dev/null | jq -r --arg key "$JIRA_KEY" 'first(.[] | select(.external_ref != null and (.external_ref | contains($key))) | .id) // empty')
 
 if [[ -z "$BEADS_ISSUE" || "$BEADS_ISSUE" == "null" ]]; then
     echo "Error: Could not find beads issue for JIRA ticket $JIRA_KEY"
@@ -102,9 +103,10 @@ if [[ -z "$BEADS_ISSUE" || "$BEADS_ISSUE" == "null" ]]; then
     exit 1
 fi
 
-# Get issue details from beads
-ISSUE_TITLE=$(bd show "$BEADS_ISSUE" --json | jq -r '.title // empty')
-JIRA_URL=$(bd show "$BEADS_ISSUE" --json | jq -r '.external_ref // empty')
+# Get issue details from beads (single bd show call, extract both fields)
+ISSUE_JSON=$(bd show "$BEADS_ISSUE" --json 2>/dev/null)
+ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title // empty')
+JIRA_URL=$(echo "$ISSUE_JSON" | jq -r '.external_ref // empty')
 ```
 
 ### Step 7: Set Beads Current Issue

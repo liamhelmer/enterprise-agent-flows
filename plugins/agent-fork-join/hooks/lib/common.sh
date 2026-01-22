@@ -190,7 +190,7 @@ jira_get_project() {
 	fi
 }
 
-# Add a comment to a beads issue (syncs to JIRA)
+# Add a comment to a beads issue and sync to JIRA
 # Usage: beads_add_comment "bd-100" "Comment text"
 beads_add_comment() {
 	local issue_id="$1"
@@ -205,9 +205,15 @@ beads_add_comment() {
 		log_debug "Could not add comment to beads issue $issue_id"
 		return 1
 	}
+
+	# Sync to JIRA to push the comment
+	bd jira sync --push 2>/dev/null || {
+		log_debug "Could not sync comment to JIRA"
+		# Don't fail - local comment was added successfully
+	}
 }
 
-# Update beads issue status
+# Update beads issue status and sync to JIRA
 # Usage: beads_update_status "bd-100" "closed"
 # Valid statuses: open, in_progress, blocked, deferred, closed
 beads_update_status() {
@@ -222,6 +228,12 @@ beads_update_status() {
 	bd update "$issue_id" --status="$status" 2>/dev/null || {
 		log_debug "Could not update beads issue $issue_id status"
 		return 1
+	}
+
+	# Sync to JIRA to push the status change
+	bd jira sync --push 2>/dev/null || {
+		log_debug "Could not sync status to JIRA"
+		# Don't fail - local status was updated successfully
 	}
 }
 
@@ -344,6 +356,7 @@ map_beads_to_jira_status() {
 # Find beads issue by JIRA key
 # Usage: beads_find_by_jira_key "PGF-123"
 # Returns: beads ID (e.g., "bd-100") or empty string
+# Note: Uses jq --arg to safely inject the JIRA key and --first to stop at first match
 beads_find_by_jira_key() {
 	local jira_key="$1"
 
@@ -351,9 +364,10 @@ beads_find_by_jira_key() {
 		return 1
 	fi
 
-	# Search for issue with matching external_ref containing the JIRA key
+	# Use jq --arg for safe variable injection and --first for efficiency
+	# The select filter runs on the stream, stopping at first match
 	local beads_id
-	beads_id=$(bd list --json 2>/dev/null | jq -r ".[] | select(.external_ref | contains(\"$jira_key\")) | .id" 2>/dev/null | head -1)
+	beads_id=$(bd list --json 2>/dev/null | jq -r --arg key "$jira_key" 'first(.[] | select(.external_ref != null and (.external_ref | contains($key))) | .id) // empty' 2>/dev/null)
 
 	if [[ -n "$beads_id" && "$beads_id" != "null" ]]; then
 		echo "$beads_id"
