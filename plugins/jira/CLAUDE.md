@@ -28,6 +28,7 @@ The command will:
    - JIRA URL: Default to https://badal.atlassian.net (allow override)
    - Project key (e.g., PGF)
    - Optional label filter (e.g., DevEx)
+   - Optional JQL filter: Default to `sprint in openSprints() OR status in ("In Review", "In Progress")`
    - JIRA username: Default to git email (allow override)
 
 4. **Setup beads**
@@ -38,6 +39,7 @@ The command will:
    - Set `jira.url` config
    - Set `jira.project` config
    - Set `jira.label` config (if provided)
+   - Set `jira.jql` config (if provided, default: active issues only)
    - Set `jira.username` config
 
 6. **Initial Sync**

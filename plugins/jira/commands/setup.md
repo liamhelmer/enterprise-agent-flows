@@ -100,7 +100,17 @@ Present defaults and allow user to override:
      - "No label filter" - Sync all issues in project
      - "Specify a label" - Only sync issues with this label
 
-4. **JIRA Username** (required, default from git config)
+4. **JQL Filter** (optional, recommended default)
+   - Header: "JQL Filter"
+   - Question: "Would you like to add a JQL filter to limit which issues are synced?"
+   - Options:
+     - "Active issues only (Recommended)" - Use default: `sprint in openSprints() OR status in ("In Review", "In Progress")`
+     - "No JQL filter" - Sync all issues matching project/label
+     - "Custom JQL" - Specify a custom JQL expression
+   - Default JQL: `sprint in openSprints() OR status in ("In Review", "In Progress")`
+   - This limits sync to issues that are actively being worked on
+
+5. **JIRA Username** (required, default from git config)
    - Header: "Username"
    - Question: "What is your JIRA email/username?"
    - If git email is available, show: "Use [git_email] (from git config)?" with options:
@@ -144,6 +154,11 @@ if [[ -n "$LABEL" ]]; then
     bd config set jira.label "$LABEL"
 fi
 
+# Set JQL filter (if provided)
+if [[ -n "$JQL_FILTER" ]]; then
+    bd config set jira.jql "$JQL_FILTER"
+fi
+
 # Set username
 bd config set jira.username "$USERNAME"
 ```
@@ -177,6 +192,7 @@ Configuration:
   URL:      https://company.atlassian.net
   Project:  PROJ
   Label:    DevEx
+  JQL:      sprint in openSprints() OR status in ("In Review", "In Progress")
   Username: user@company.com
 
 Useful commands:
