@@ -635,6 +635,7 @@ main() {
 		timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 		mkdir -p "$STATE_DIR"
+		ensure_fork_join_gitignored # Add .fork-join/ to .gitignore if not already
 		echo "$session_id" >"${STATE_DIR}/current_session"
 
 		cat >"${STATE_DIR}/${session_id}.json" <<SESS_EOF

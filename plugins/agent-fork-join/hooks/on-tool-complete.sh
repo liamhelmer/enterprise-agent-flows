@@ -112,6 +112,7 @@ STATE_DIR="${FORK_JOIN_STATE_DIR:-.fork-join}"
 
 # Record the file for later commit (append to tracked files list)
 mkdir -p "$STATE_DIR"
+ensure_fork_join_gitignored # Add .fork-join/ to .gitignore if not already
 TRACKED_FILES="${STATE_DIR}/tracked_files.txt"
 
 # Add file to tracked list if not already there

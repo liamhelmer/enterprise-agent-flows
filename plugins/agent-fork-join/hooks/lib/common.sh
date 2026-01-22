@@ -93,6 +93,54 @@ setup_cleanup_trap() {
 }
 
 # ==========================================
+# Gitignore Management Functions
+# ==========================================
+
+# Ensure .fork-join/ is in .gitignore (unless user explicitly un-ignored it)
+# Call this whenever creating the .fork-join directory
+# Returns: 0 if gitignore was updated, 1 if no update needed
+ensure_fork_join_gitignored() {
+	local gitignore_file=".gitignore"
+	local pattern=".fork-join/"
+
+	# Check if .gitignore exists
+	if [[ ! -f "$gitignore_file" ]]; then
+		# Create .gitignore with .fork-join/
+		echo "$pattern" >"$gitignore_file"
+		log_debug "Created .gitignore with $pattern"
+		return 0
+	fi
+
+	# Check if user has explicitly un-ignored .fork-join (wants it tracked)
+	# Look for patterns like: !.fork-join or !.fork-join/ or !.fork-join/*
+	if grep -qE '^!\s*\.fork-join' "$gitignore_file" 2>/dev/null; then
+		log_debug "User has un-ignored .fork-join in .gitignore, respecting that"
+		return 1
+	fi
+
+	# Check if .fork-join is already in gitignore (with or without trailing /)
+	if grep -qE '^\s*\.fork-join/?(\s*#.*)?$' "$gitignore_file" 2>/dev/null; then
+		log_debug ".fork-join already in .gitignore"
+		return 1
+	fi
+
+	# Add .fork-join/ to gitignore
+	echo "" >>"$gitignore_file"
+	echo "# Agent fork-join session files (auto-added)" >>"$gitignore_file"
+	echo "$pattern" >>"$gitignore_file"
+	log_debug "Added $pattern to .gitignore"
+	return 0
+}
+
+# Create .fork-join directory and ensure it's gitignored
+# Usage: ensure_fork_join_dir
+ensure_fork_join_dir() {
+	local state_dir="${FORK_JOIN_STATE_DIR:-.fork-join}"
+	mkdir -p "$state_dir"
+	ensure_fork_join_gitignored
+}
+
+# ==========================================
 # JIRA Config Cache Functions (Fast Path)
 # ==========================================
 

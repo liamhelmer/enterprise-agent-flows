@@ -111,6 +111,23 @@ When `.beads/current-issue` exists (set by `/jira:work`), this plugin automatica
 
 Each PR description includes a "Prompt History" section with timestamped collapsible accordions for each prompt submitted during the session. When continuing work on an existing PR branch, new prompts are automatically appended to this history.
 
+## .fork-join Directory
+
+The plugin creates a `.fork-join/` directory to store session state:
+
+```
+.fork-join/
+├── current_session       # Current session ID
+├── tracked_files.txt     # Files changed in this session
+└── session-*.json        # Session metadata
+```
+
+**Gitignore Handling:**
+
+- When creating `.fork-join/`, the plugin automatically adds it to `.gitignore`
+- If `.fork-join/` is already in `.gitignore`, no changes are made
+- If user has `!.fork-join` in `.gitignore` (to track session files), the plugin respects that and does NOT re-add the ignore rule
+
 ## Multi-Agent Workflow (Future)
 
 The daemon infrastructure supports:
