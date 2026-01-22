@@ -11,7 +11,7 @@ Complete the current branch workflow by switching to main and cleaning up. This 
 
 - Comment "PR merged" on the JIRA ticket when the PR is merged
 - Ask the user if they want to update the JIRA ticket status
-- Clean up the `.jira/current-ticket` symlink
+- Clean up the `.jira/current-ticket` symlink **only if user selects "Done"**
 
 ## When This Command Is Invoked
 
@@ -80,13 +80,19 @@ If a JIRA ticket is being tracked (`.jira/current-ticket` exists) and the PR was
    - Header: "JIRA Status"
    - Question: "Would you like to update the JIRA ticket status?"
    - Options:
-     - "Done" - Mark the ticket as done
-     - "In Review" - Mark as in review
-     - "No change" - Leave status unchanged
+     - "Done" - Mark the ticket as done (clears current-ticket tracking)
+     - "In Review" - Mark as in review (keeps current-ticket tracking)
+     - "No change" - Leave status unchanged (keeps current-ticket tracking)
 
 3. If user selects a status change, update via beads:
+
    ```bash
    bd update "$JIRA_TICKET_ID" --status="done"
+   ```
+
+4. **Only if user selects "Done"**, clean up the JIRA tracking:
+   ```bash
+   rm -f .jira/current-ticket
    ```
 
 ### Step 4: Switch to Main Branch
@@ -132,8 +138,7 @@ fi
 rm -f .fork-join/current_session
 rm -f .fork-join/tracked_files.txt
 
-# Clean up JIRA tracking if PR was merged
-rm -f .jira/current-ticket
+# Note: .jira/current-ticket is only removed if user selected "Done" in Step 3
 ```
 
 ### Step 8: Run Compact

@@ -324,9 +324,11 @@ ask_jira_status_change() {
 	output "The Claude agent should use AskUserQuestion to ask:"
 	output "  Question: 'Would you like to update the JIRA ticket status?'"
 	output "  Options:"
-	output "    - 'Done' - Mark the ticket as done"
-	output "    - 'In Review' - Mark as in review"
-	output "    - 'No change' - Leave status unchanged"
+	output "    - 'Done' - Mark the ticket as done (clears current-ticket tracking)"
+	output "    - 'In Review' - Mark as in review (keeps current-ticket tracking)"
+	output "    - 'No change' - Leave status unchanged (keeps current-ticket tracking)"
+	output ""
+	output "NOTE: Only clean up .jira/current-ticket if user selects 'Done'."
 	output ""
 }
 
@@ -393,10 +395,8 @@ main() {
 	# Step 6: Clean up session state
 	cleanup_session
 
-	# Step 7: Clean up JIRA ticket tracking (if PR was merged)
-	if [[ -n "$SHOULD_DELETE_LOCAL_BRANCH" ]]; then
-		cleanup_jira_ticket
-	fi
+	# Note: JIRA ticket tracking (.jira/current-ticket) is NOT cleaned up here.
+	# The Claude agent will clean it up only if the user selects "Done" status.
 
 	output ""
 	output "=== Workflow Complete ==="

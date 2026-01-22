@@ -62,7 +62,6 @@ The command will:
 
 4. **Set Up Tracking**
    - Create `.jira/` directory
-   - Add `.jira/` to `.gitignore`
    - Create ticket file at `.jira/TICKET-ID`
    - Create symlink `.jira/current-ticket` → ticket file
 
@@ -102,7 +101,7 @@ When `.jira/current-ticket` exists, agent-fork-join will:
 
 4. **/done Command**: Ask about ticket status
    - Offer to transition ticket (Done, In Review, etc.)
-   - Clean up `.jira/current-ticket` if desired
+   - Clean up `.jira/current-ticket` only if user selects "Done"
 
 ## Prerequisite Instructions
 
@@ -173,7 +172,7 @@ User: /done
 ┌─────────────────────────────────────────┐
 │ Ask about JIRA ticket status change     │
 │ PR merged → Comment "PR merged" on JIRA │
-│ Clean up .jira/current-ticket           │
+│ Clean up .jira/current-ticket (if Done) │
 └─────────────────────────────────────────┘
 ```
 

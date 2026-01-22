@@ -69,7 +69,7 @@ Use `/done` when your PR has been merged and you want to clean up locally:
 4. **Switch to main branch**
 5. **Pull latest changes**
 6. **Delete local feature branch** (if PR was merged)
-7. **Clean up JIRA tracking** - Remove `.jira/current-ticket` symlink
+7. **Clean up JIRA tracking** - Remove `.jira/current-ticket` symlink (only if user selects "Done")
 8. **Run /compact** to consolidate conversation history
 
 ```
@@ -98,7 +98,7 @@ When `.jira/current-ticket` exists (set by `/jira:work`), this plugin automatica
 
 - Comments "PR merged" on JIRA ticket
 - Asks user about updating ticket status (Done, In Review, etc.)
-- Cleans up `.jira/current-ticket` symlink
+- Cleans up `.jira/current-ticket` symlink only if user selects "Done"
 
 ## PR Prompt History
 

@@ -54,7 +54,6 @@ Select a JIRA ticket to work on. Enables smart commits and PR linking.
 2. Presents a list of open tickets (your assigned tickets first)
 3. Attempts to guess the best match based on context
 4. Creates `.jira/current-ticket` tracking file
-5. Adds `.jira/` to `.gitignore`
 
 **After running /jira:work:**
 
@@ -81,20 +80,21 @@ When a JIRA ticket is being tracked (`.jira/current-ticket` exists):
 
 - Comments "PR merged" on JIRA ticket
 - Asks if ticket status should be updated (Done, In Review, etc.)
-- Cleans up `.jira/current-ticket` symlink
+- Cleans up `.jira/current-ticket` symlink **only if status is set to Done**
 
 ## .jira Directory Structure
 
 ```
 .jira/
 ├── current-ticket -> PGF-123     # Symlink to active ticket
-├── PGF-123                        # Ticket metadata file
-│   ticket_id=PGF-123
-│   started_at=2024-01-15T10:30:00Z
-│   summary=Implement login feature
-│   url=https://badal.atlassian.net/browse/PGF-123
-└── .gitignore entry added automatically
+└── PGF-123                        # Ticket metadata file
+    ticket_id=PGF-123
+    started_at=2024-01-15T10:30:00Z
+    summary=Implement login feature
+    url=https://badal.atlassian.net/browse/PGF-123
 ```
+
+Note: The `.jira/` directory is tracked in git (not excluded via `.gitignore`).
 
 ## Prerequisites
 

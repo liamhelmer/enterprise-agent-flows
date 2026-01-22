@@ -88,18 +88,11 @@ Use the AskUserQuestion tool to present tickets to the user.
 
 ### Step 6: Set Up .jira Directory
 
-Create the .jira directory and tracking files:
+Create the .jira directory:
 
 ```bash
 # Create .jira directory if it doesn't exist
 mkdir -p .jira
-
-# Add .jira to .gitignore if not already there
-if ! grep -q "^\.jira/$" .gitignore 2>/dev/null; then
-    echo "" >> .gitignore
-    echo "# JIRA ticket tracking" >> .gitignore
-    echo ".jira/" >> .gitignore
-fi
 ```
 
 ### Step 7: Create Ticket Tracking File
