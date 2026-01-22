@@ -1,11 +1,17 @@
 ---
 name: "done"
-description: "Complete the current branch workflow: check PR status, switch to main, pull changes, and clean up local branch."
+description: "Complete the current branch workflow: check PR status, handle JIRA ticket, switch to main, pull changes, and clean up local branch."
 ---
 
 # /done Command
 
 Complete the current branch workflow by switching to main and cleaning up. This is a **local-only** operation - it does not modify the remote repository.
+
+**JIRA Integration:** If a JIRA ticket is being tracked (via `.jira/current-ticket`), this command will:
+
+- Comment "PR merged" on the JIRA ticket when the PR is merged
+- Ask the user if they want to update the JIRA ticket status
+- Clean up the `.jira/current-ticket` symlink **only if user selects "Done"**
 
 ## When This Command Is Invoked
 
@@ -65,7 +71,31 @@ if [[ "$current_branch" =~ ^(build|ci|docs|feat|fix|perf|refactor|test)/ ]]; the
 fi
 ```
 
-### Step 3: Switch to Main Branch
+### Step 3: JIRA Ticket Status (if applicable)
+
+If a JIRA ticket is being tracked (`.jira/current-ticket` exists) and the PR was merged:
+
+1. The script will output `JIRA_TICKET_STATUS_QUESTION=true` signal
+2. Use **AskUserQuestion** to ask the user:
+   - Header: "JIRA Status"
+   - Question: "Would you like to update the JIRA ticket status?"
+   - Options:
+     - "Done" - Mark the ticket as done (clears current-ticket tracking)
+     - "In Review" - Mark as in review (keeps current-ticket tracking)
+     - "No change" - Leave status unchanged (keeps current-ticket tracking)
+
+3. If user selects a status change, update via beads:
+
+   ```bash
+   bd update "$JIRA_TICKET_ID" --status="done"
+   ```
+
+4. **Only if user selects "Done"**, clean up the JIRA tracking:
+   ```bash
+   rm -f .jira/current-ticket
+   ```
+
+### Step 4: Switch to Main Branch
 
 ```bash
 # Stash any uncommitted changes
@@ -77,7 +107,7 @@ fi
 git checkout "$default_branch"
 ```
 
-### Step 4: Pull Latest Changes
+### Step 5: Pull Latest Changes
 
 ```bash
 git pull origin "$default_branch"
@@ -88,7 +118,7 @@ If there are merge conflicts:
 1. First try to auto-resolve by accepting remote changes: `git checkout --theirs . && git add -A`
 2. If that fails, show the user the conflicting files and ask them to resolve manually
 
-### Step 5: Delete Local Feature Branch
+### Step 6: Delete Local Feature Branch
 
 If the PR was merged, delete the local feature branch:
 
@@ -101,15 +131,17 @@ if [[ -n "$branch_to_delete" ]]; then
 fi
 ```
 
-### Step 6: Clean Up Session State
+### Step 7: Clean Up Session State
 
 ```bash
 # Remove session tracking files
 rm -f .fork-join/current_session
 rm -f .fork-join/tracked_files.txt
+
+# Note: .jira/current-ticket is only removed if user selected "Done" in Step 3
 ```
 
-### Step 7: Run Compact
+### Step 8: Run Compact
 
 After all steps complete successfully, run the `/compact` command to consolidate conversation history.
 

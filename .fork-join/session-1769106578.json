@@ -1,0 +1,17 @@
+{
+  "session_id": "session-1769106578",
+  "feature_branch": "feat/jira-plugin-onboarding",
+  "base_branch": "main",
+  "prompt": "Create a new plugin that automatically onboards the user to JIRA with beads. It will ask for the api token to be in the environment at JIRA_API_TOKEN, and that beads is installed. if they're not, it will instruct the user how to get those things and set them up. If those things are set up, then it will set up beads in the repository (if not present), use beads doctor to fix any beads issues, and sync with JIRA. It will ask the user for a project name and an optional label to sync with for the project.\n",
+  "state": "STARTED",
+  "started_at": "2026-01-22T18:29:38Z",
+  "agents": [],
+  "merged_count": 0,
+  "conflict_count": 0,
+  "prompts": [
+    {
+      "prompt": "change the new plugin name to jira. have the command be named simply setup, for brevity. Add a new command to initiate working on a specific ticket. It should present a list to the user of tickets matching the JIRA search criteria that the user can choose from. It will attempt to guess which is the right one based on the prompt and which tickets are assigned to the user and put that ticket first, but the user will select the ticket from the list. Tickets assigned to the user will be listed first. It will add a temporary file to the repo at .jira/TICKET-NAME, and will add a symlink from that to .jira/current-ticket. it will add the .jira directory to .gitignore. Add support to agent-fork-join to be able detect which ticket is being worked on from .jira/current-ticket, and add the JIRA ticket to all commits and PR to enable smart commits. Also, add support to the /done command to ask the user if the current jira ticket status should be changed. Every made PR should comment on the current jira issue with a summary of the PR, and a link to the PR. Every merged PR should put in a simple comment PR merged. All these interactions with jira should use beads.",
+      "timestamp": "2026-01-22 18:45:51 UTC"
+    }
+  ]
+}
