@@ -1,3 +1,3 @@
-/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/commands/setup.md
-/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/CLAUDE.md
-/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/scripts/setup-jira.sh
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/.claude-plugin/marketplace.json
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/agent-fork-join/.claude-plugin/plugin.json
+/Users/liam.helmer/repos/liamhelmer/enterpise-agent-flows/plugins/jira/.claude-plugin/plugin.json

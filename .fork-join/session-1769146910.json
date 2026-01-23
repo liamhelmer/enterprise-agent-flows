@@ -1,0 +1,11 @@
+{
+    "session_id": "session-1769146910",
+    "feature_branch": "feat/bump-plugin-and-beads-versions",
+    "base_branch": "main",
+    "prompt": "bump the versions of both plugins in the marketplace, and make sure that the local claude instance is using the latest version. Also, update beads to the latest version\n",
+    "state": "STARTED",
+    "started_at": "2026-01-23T05:41:50Z",
+    "agents": [],
+    "merged_count": 0,
+    "conflict_count": 0
+}
